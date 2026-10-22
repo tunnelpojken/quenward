@@ -5,8 +5,14 @@
   --text: #1c2026;
   --muted: #5e6672;
   --border: #d9dde3;
+  --field: #ffffff;
+  --accent: #2f6fde;
+  --accent-text: #ffffff;
   --ok: #1f8a4c;
   --bad: #c0392b;
+  --bad-bg: #fdecea;
+  --info-bg: #e8f1fd;
+  --code-bg: #eef0f3;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -19,8 +25,14 @@
     --text: #e6e8eb;
     --muted: #9aa3ae;
     --border: #2c323a;
+    --field: #13171c;
+    --accent: #5b8ff0;
+    --accent-text: #0b0e12;
     --ok: #46c27a;
     --bad: #ef6b5e;
+    --bad-bg: #3a1c1a;
+    --info-bg: #17263d;
+    --code-bg: #232931;
   }
 }
 
@@ -31,4 +43,129 @@
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+.center {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.brand {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.card > .muted {
+  margin: 0 0 16px;
+}
+
+form {
+  display: grid;
+  gap: 14px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+label .muted {
+  font-weight: 400;
+}
+
+input {
+  font: inherit;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 14px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button.secondary {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--border);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.notice.error {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+
+.notice.info {
+  background: var(--info-bg);
+}
+
+.hint {
+  margin: 16px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.hint.top {
+  margin: 0 0 16px;
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85em;
+  padding: 1px 4px;
+  background: var(--code-bg);
+  border-radius: 4px;
 }

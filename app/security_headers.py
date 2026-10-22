@@ -46,11 +46,16 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        extra = _ENCODED
+        if scope["path"].startswith("/api/"):
+            # API answers (session info, CSRF tokens) must never be cached anywhere.
+            extra = _ENCODED + [(b"cache-control", b"no-store")]
+
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                names = {name for name, _ in _ENCODED}
+                names = {name for name, _ in extra}
                 headers = [h for h in message.get("headers", []) if h[0].lower() not in names]
-                message["headers"] = headers + _ENCODED
+                message["headers"] = headers + extra
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

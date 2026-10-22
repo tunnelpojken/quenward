@@ -32,7 +32,10 @@ WORKDIR /app
 COPY --from=python-deps /app/.venv /app/.venv
 COPY app/ ./app/
 COPY --from=frontend /build/dist ./frontend/dist
-RUN python -m compileall -q app
+RUN python -m compileall -q app \
+    && printf '#!/bin/sh\ncd /app && exec python -m app.cli reset-password "$@"\n' \
+       > /usr/local/bin/reset-password \
+    && chmod 755 /usr/local/bin/reset-password
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
