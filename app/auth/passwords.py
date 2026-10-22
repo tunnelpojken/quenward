@@ -8,6 +8,7 @@ upgraded on the next successful login.
 import contextlib
 import re
 from functools import cache
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
@@ -31,13 +32,23 @@ def validate_username(username: str) -> None:
         )
 
 
+@cache
+def _common_passwords() -> frozenset[str]:
+    text = (Path(__file__).parent / "common_passwords.txt").read_text(encoding="utf-8")
+    return frozenset(
+        line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
+    )
+
+
 def validate_password(password: str, username: str) -> None:
     if len(password) < MIN_PASSWORD_LENGTH:
         raise PolicyError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
     if len(password) > MAX_PASSWORD_LENGTH:
         raise PolicyError(f"Password must be at most {MAX_PASSWORD_LENGTH} characters")
-    if username.lower() in password.lower():
+    if username and username.lower() in password.lower():
         raise PolicyError("Password must not contain the username")
+    if password.lower() in _common_passwords():
+        raise PolicyError("This password is on a list of commonly used passwords")
 
 
 def hash_password(password: str) -> str:

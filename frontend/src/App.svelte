@@ -1,68 +1,89 @@
 <script>
-  // Phase 1 placeholder: proves the frontend is built, served and can reach the backend.
-  let status = $state("checking");
+  import Card from "./lib/Card.svelte";
+  import Notice from "./lib/Notice.svelte";
+  import { getSession, setupStatus } from "./lib/api.js";
+  import Home from "./views/Home.svelte";
+  import Login from "./views/Login.svelte";
+  import Reset from "./views/Reset.svelte";
+  import Setup from "./views/Setup.svelte";
 
-  async function check() {
+  // loading | setup | login | reset | home | error
+  let view = $state("loading");
+  let session = $state(null);
+  let resetToken = $state("");
+  let loginUsername = $state("");
+  let loginInfo = $state("");
+  let fatal = $state("");
+
+  function showLogin(info = "", username = "") {
+    session = null;
+    loginInfo = info;
+    loginUsername = username;
+    view = "login";
+  }
+
+  async function start() {
+    // Reset links look like /#/reset/<token>. The token lives in the fragment, which
+    // browsers never send to the server, and is removed from the address bar at once
+    // so it does not stay in the history.
+    const match = location.hash.match(/^#\/reset\/([A-Za-z0-9_-]+)$/);
+    if (match) {
+      resetToken = match[1];
+      history.replaceState(null, "", location.pathname);
+      view = "reset";
+      return;
+    }
     try {
-      const response = await fetch("/healthz");
-      status = response.ok && (await response.text()) === "ok" ? "online" : "error";
-    } catch {
-      status = "offline";
+      if (await setupStatus()) {
+        view = "setup";
+        return;
+      }
+      session = await getSession();
+      if (session) view = "home";
+      else showLogin();
+    } catch (e) {
+      fatal = e.message || "Could not reach the server.";
+      view = "error";
     }
   }
 
-  check();
+  // Coming back to the tab: check that the session has not expired meanwhile.
+  async function onVisible() {
+    if (document.visibilityState !== "visible" || view !== "home") return;
+    try {
+      if (!(await getSession())) showLogin("Your session expired. Please log in again.");
+    } catch {
+      // Network hiccup: keep the current view; the next action will tell.
+    }
+  }
+
+  start();
 </script>
 
-<main>
-  <section class="card">
-    <h1>docker-project</h1>
-    <p class="muted">Phase 1 skeleton. Stacks, logs and controls arrive in later phases.</p>
-    <p>
-      Backend:
-      <span class="status" class:ok={status === "online"} class:bad={status !== "online" && status !== "checking"}>
-        {status}
-      </span>
-    </p>
-  </section>
-</main>
+<svelte:document onvisibilitychange={onVisible} />
+<!-- A reset link pasted into a tab where the app is already open only changes the
+     #fragment, which does not reload the page. -->
+<svelte:window onhashchange={() => location.hash.startsWith("#/reset/") && start()} />
 
-<style>
-  main {
-    display: grid;
-    place-items: center;
-    min-height: 100vh;
-    padding: 16px;
-  }
-
-  .card {
-    width: 100%;
-    max-width: 420px;
-    padding: 24px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-
-  h1 {
-    margin: 0 0 8px;
-    font-size: 1.25rem;
-  }
-
-  .muted {
-    color: var(--muted);
-    margin: 0 0 16px;
-  }
-
-  .status {
-    font-weight: 600;
-  }
-
-  .ok {
-    color: var(--ok);
-  }
-
-  .bad {
-    color: var(--bad);
-  }
-</style>
+{#if view === "loading"}
+  <main class="center"><p class="muted">Loading…</p></main>
+{:else if view === "setup"}
+  <Setup onDone={(username) => showLogin("Admin account created. You can log in now.", username)} />
+{:else if view === "login"}
+  <Login
+    initialUsername={loginUsername}
+    info={loginInfo}
+    onDone={(s) => {
+      session = s;
+      view = "home";
+    }}
+  />
+{:else if view === "reset"}
+  <Reset token={resetToken} onDone={(username) => showLogin("Password changed. Log in with the new one.", username)} />
+{:else if view === "home"}
+  <Home {session} onLoggedOut={() => showLogin("You have been logged out.")} />
+{:else}
+  <Card title="Something is wrong">
+    <Notice message={fatal} />
+  </Card>
+{/if}

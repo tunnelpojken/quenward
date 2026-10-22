@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import db
+from app import alerts, db
 from app.auth import sessions
 from app.auth.ratelimit import LoginLimiter
 from app.config import Settings
@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # never sessions.
     app.state.csrf_secret = secrets.token_bytes(32)
     app.state.limiter = LoginLimiter()
+    app.state.alerter = alerts.from_config(settings.ntfy)
     app.state.setup_token = None
     app.add_middleware(SecurityHeadersMiddleware)
 

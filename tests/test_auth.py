@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app import audit, db
 from app.auth import passwords, sessions
+from app.auth.ratelimit import LoginLimiter
 from app.config import Settings
 from tests.conftest import ORIGIN, PASSWORD, USERNAME, FakeClock
 
@@ -170,14 +171,15 @@ def test_wrong_username_and_wrong_password_take_similar_time(client: TestClient,
         _login(client, **kwargs)
         return time.perf_counter() - start
 
-    # Alternate so background noise affects both sides equally; take the medians.
+    # Lockouts answer instantly, which would hide the comparison; lift the limits here.
+    client.app.state.limiter = LoginLimiter(max_per_user=1000, max_per_ip=1000)
+    # Alternate the two cases and compare the fastest run of each: the minimum is
+    # the true cost of the work, while slower runs only add random machine noise.
     real, fake = [], []
-    for _ in range(4):
+    for _ in range(6):
         real.append(timed(password="wrong-password-123"))
         fake.append(timed(username=f"ghost{secrets.token_hex(4)}"))
-    real.sort()
-    fake.sort()
-    ratio = real[len(real) // 2] / fake[len(fake) // 2]
+    ratio = min(real) / min(fake)
     assert 0.5 < ratio < 2.0, f"timing differs too much: ratio {ratio:.2f}"
 
 

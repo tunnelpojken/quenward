@@ -22,6 +22,7 @@ PUBLIC = {
     ("GET", "/api/setup/status"),  # tells the UI whether to show setup or login
     ("POST", "/api/setup"),  # protected by the one-time setup token
     ("POST", "/api/login"),  # the way in
+    ("POST", "/api/password-reset"),  # protected by the one-time link from the CLI
 }
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 

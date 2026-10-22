@@ -1,4 +1,4 @@
-"""First-admin setup, login, logout and the current session."""
+"""First-admin setup, login, logout, the current session and password reset."""
 
 import hmac
 import sqlite3
@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app import audit
-from app.auth import passwords, sessions
+from app.alerts import Alert, Alerter
+from app.auth import passwords, resets, sessions
 from app.auth.deps import CurrentUser, check_origin, client_ip, get_db, require_user
 
 # Routes anyone may call. Every one is listed in tests/test_route_auth.py.
@@ -27,6 +28,11 @@ class SetupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str = Field(max_length=64)
+    password: str = Field(max_length=passwords.MAX_PASSWORD_LENGTH)
+
+
+class ResetRequest(BaseModel):
+    token: str = Field(max_length=128)
     password: str = Field(max_length=passwords.MAX_PASSWORD_LENGTH)
 
 
@@ -72,6 +78,13 @@ def setup(
     if not hmac.compare_digest(body.token.encode(), state.setup_token.encode()):
         state.limiter.record_failure(None, ip)
         audit.record(conn, "setup_failed", "denied", ip=ip)
+        state.alerter.send(
+            Alert(
+                "Failed setup attempt",
+                f"Someone at {ip} tried to create the first admin with a wrong setup token.",
+                tags=("warning",),
+            )
+        )
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid setup token")
 
     try:
@@ -97,6 +110,24 @@ def setup(
         raise
     state.setup_token = None  # setup is now permanently closed
     return {"username": body.username}
+
+
+def _alert_failed_login(
+    alerter: Alerter, username: str | None, ip: str | None, locked: list[str]
+) -> None:
+    who = f"'{username}'" if username else "an unknown username"
+    if locked:
+        what = " and ".join({"user": "the account", "ip": "the address"}[k] for k in locked)
+        alerter.send(
+            Alert(
+                "Login locked",
+                f"Too many failed logins for {who} from {ip}: {what} is locked for 15 minutes.",
+                priority="high",
+                tags=("rotating_light",),
+            )
+        )
+    else:
+        alerter.send(Alert("Failed login", f"Failed login for {who} from {ip}.", tags=("warning",)))
 
 
 @public_router.post("/login", dependencies=[Depends(check_origin)])
@@ -131,6 +162,7 @@ def login(
             unknown_user=user is None,
             locked=locked,
         )
+        _alert_failed_login(state.alerter, user["username"] if user else None, ip, locked)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _INVALID_LOGIN)
 
     state.limiter.record_success(body.username)
@@ -169,3 +201,53 @@ def logout(
     response.delete_cookie(
         sessions.COOKIE_NAME, path="/", secure=True, httponly=True, samesite="strict"
     )
+
+
+@public_router.post("/password-reset", dependencies=[Depends(check_origin)])
+def password_reset(
+    body: ResetRequest, request: Request, conn: sqlite3.Connection = Depends(get_db)
+) -> dict[str, str]:
+    """Set a new password with a link from the `reset-password` command."""
+    state = request.app.state
+    ip = client_ip(request)
+    if state.limiter.is_blocked(None, ip):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY)
+
+    reset = resets.find_valid(conn, body.token)
+    if reset is None:
+        state.limiter.record_failure(None, ip)
+        audit.record(conn, "password_reset_failed", "denied", ip=ip)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This reset link is invalid or expired")
+    try:
+        passwords.validate_password(body.password, reset["username"])
+    except passwords.PolicyError as e:
+        # The link stays valid so the user can try a better password.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+
+    password_hash = passwords.hash_password(body.password)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Re-check inside the write lock: the same link cannot be used twice.
+        if resets.find_valid(conn, body.token) is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "This reset link is invalid or expired"
+            )
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, reset["user_id"])
+        )
+        resets.mark_used(conn, reset["id"])
+        sessions.delete_all_for_user(conn, reset["user_id"])
+        audit.record(conn, "password_reset", "ok", user_id=reset["user_id"], ip=ip)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    state.alerter.send(
+        Alert(
+            "Password changed",
+            f"The password for '{reset['username']}' was changed with a reset link from {ip}.",
+            priority="high",
+            tags=("key",),
+        )
+    )
+    return {"username": reset["username"]}
