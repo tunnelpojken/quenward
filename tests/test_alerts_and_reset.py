@@ -53,10 +53,19 @@ def test_common_passwords_are_rejected(client: TestClient) -> None:
     assert "commonly used" in response.json()["detail"]
 
 
+def test_common_password_list_is_well_formed() -> None:
+    """Every entry must be one the length check would otherwise let through."""
+    for entry in passwords._common_passwords():
+        assert len(entry) >= passwords.MIN_PASSWORD_LENGTH, entry
+        assert entry == entry.lower(), entry
+        assert entry == entry.strip(), entry
+
+
 def test_common_password_check_ignores_case() -> None:
-    sample = next(iter(passwords._common_passwords()))
-    with pytest.raises(passwords.PolicyError, match="commonly used"):
-        passwords.validate_password(sample.upper(), "someone")
+    # Sorted, so the same entry is used on every run (set order is random per process).
+    for sample in sorted(passwords._common_passwords())[:50]:
+        with pytest.raises(passwords.PolicyError, match="commonly used"):
+            passwords.validate_password(sample.upper(), "someone")
 
 
 # ---------------------------------------------------------------- alerts from the app

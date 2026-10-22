@@ -109,7 +109,7 @@ The link uses the first address in `ALLOWED_ORIGINS`.
 With no admin account, the app prints a one-time setup token to its log:
 
 ```bash
-docker compose -f compose.dev.yaml logs app | grep "setup token"
+docker logs docker-project-dev 2>&1 | grep "setup token"
 ```
 
 The token creates the first admin and then stops working for good. Until setup is

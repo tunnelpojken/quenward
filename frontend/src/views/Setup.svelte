@@ -34,7 +34,7 @@
 <Card title="Create the admin account" subtitle="This page works only once, with the setup token from the container log.">
   <p class="hint top">
     Find the token with
-    <code>docker compose logs app | grep "setup token"</code>
+    <code>docker logs &lt;container&gt; 2&gt;&amp;1 | grep "setup token"</code>
   </p>
   <form onsubmit={submit}>
     <label>
