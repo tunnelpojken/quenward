@@ -4,7 +4,7 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 1 (foundation).** No authentication and no Docker access yet.
+**Status: Phase 2 (authentication) in progress.** No Docker access yet.
 Do not expose it to any network.
 
 ## Requirements
@@ -61,8 +61,20 @@ cd frontend && npm audit --audit-level=high && npm run build
 | `STACKS_DIR` | `/stacks`       | Folder with one subfolder per stack   |
 | `STATIC_DIR` | `frontend/dist` | Built frontend                        |
 | `PORT`       | `5005`          | Listening port inside the container   |
+| `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
 
 All paths must be absolute.
+
+## First start
+
+With no admin account, the app prints a one-time setup token to its log:
+
+```bash
+docker compose -f compose.dev.yaml logs app | grep "setup token"
+```
+
+The token creates the first admin and then stops working for good. Until setup is
+done, every restart prints a new one.
 
 ## Database migrations
 
