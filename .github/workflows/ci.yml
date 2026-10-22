@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# The workflow only needs to read the code.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies (must match uv.lock exactly)
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Formatting
+        run: uv run ruff format --check .
+
+      - name: Bandit (insecure Python patterns)
+        run: uv run bandit -c pyproject.toml -r app
+
+      - name: pip-audit (known vulnerabilities in dependencies)
+        run: uv run pip-audit
+
+      - name: Tests
+        run: uv run pytest
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (must match package-lock.json exactly)
+        run: npm ci --no-fund
+
+      - name: npm audit (known vulnerabilities)
+        run: npm audit --audit-level=high
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: docker
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t docker-project:ci .
+
+      - name: Smoke test the running container
+        run: |
+          docker run -d --name app -p 127.0.0.1:5005:5005 \
+            --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            docker-project:ci
+          for i in $(seq 1 30); do
+            if [ "$(curl -fsS http://127.0.0.1:5005/healthz)" = "ok" ]; then
+              curl -fsS http://127.0.0.1:5005/ | grep -q '<div id="app">'
+              echo "Container is healthy and serves the frontend"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs app
+          exit 1

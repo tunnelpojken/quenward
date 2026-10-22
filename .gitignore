@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Local runtime data (never commit a database)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env
+*.key
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

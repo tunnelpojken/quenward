@@ -1,0 +1,29 @@
+# Development compose file.
+#   docker compose -f compose.dev.yaml up --build
+# Then open http://127.0.0.1:5005
+#
+# No Docker socket is mounted yet: the app gets access to Docker in Phase 3,
+# after authentication has passed its test gate.
+
+services:
+  app:
+    build: .
+    image: docker-project:dev
+    container_name: docker-project-dev
+    restart: unless-stopped
+    ports:
+      # Only reachable from this machine, never from the network.
+      - "127.0.0.1:5005:5005"
+    volumes:
+      - data:/data
+    # Hardening: read-only filesystem, no Linux capabilities, no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  data:
