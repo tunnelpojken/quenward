@@ -19,10 +19,21 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --locked --no-dev
 
-# ---- 3. Runtime image: no compilers, no uv, no node -------------------------
+# ---- 3. Docker CLI and compose plugin (static binaries) ---------------------
+FROM docker:29-cli AS docker-cli
+
+# ---- 4. Runtime image: no compilers, no uv, no node -------------------------
 FROM python:3.13-slim AS runtime
 
-# Unprivileged user. Phase 3 adds it to the Docker socket's group (GID from an env var).
+# Stack actions run `docker compose`. Only the client binaries are copied; the
+# daemon stays on the host and is reached through the mounted socket.
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
+     /usr/local/libexec/docker/cli-plugins/docker-compose
+RUN docker --version && docker compose version
+
+# Unprivileged user. It reaches the Docker socket through the socket's group
+# (group_add with DOCKER_GID in the compose file), never as root.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /data \
     && chown app:app /data \

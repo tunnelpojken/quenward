@@ -110,6 +110,10 @@ class LogFollower:
             self._threads.append(thread)
             thread.start()
 
+    def finished(self) -> bool:
+        """True once every followed container's stream has ended (stopped or removed)."""
+        return bool(self._threads) and not any(t.is_alive() for t in self._threads)
+
     def stop(self) -> None:
         self._stopped.set()
         for stream in list(self._streams):

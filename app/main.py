@@ -23,6 +23,7 @@ from app.config import Settings
 from app.routes import auth as auth_routes
 from app.routes import stacks as stack_routes
 from app.security_headers import SecurityHeadersMiddleware
+from app.stacks.actions import JobManager
 from app.stacks.gateway import DockerGateway
 
 log = logging.getLogger("app")
@@ -83,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.alerter = alerts.from_config(settings.ntfy)
     app.state.docker = DockerGateway()
     app.state.log_sockets = {}
+    app.state.jobs = JobManager(settings, lambda: app.state.docker)
     app.state.setup_token = None
     app.add_middleware(SecurityHeadersMiddleware)
 

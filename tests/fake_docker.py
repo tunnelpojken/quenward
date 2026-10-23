@@ -24,6 +24,7 @@ def container_attrs(
         "Id": cid.ljust(64, "0"),
         "Names": [f"/{project}-{service}-1"],
         "Image": f"example/{service}:1.0",
+        "ImageID": f"sha256:{service}-v1",
         "Command": "run --password=list-command-secret",
         "Created": 1_700_000_000,
         "State": state,
@@ -51,6 +52,7 @@ def inspect_attrs(summary: dict[str, Any]) -> dict[str, Any]:
         "Path": "/entrypoint.sh",
         "State": {
             "Status": summary["State"],
+            "Running": summary["State"] == "running",
             "ExitCode": 0,
             "OOMKilled": False,
             "StartedAt": "2026-10-23T06:00:01Z",
@@ -120,6 +122,8 @@ class FakeGateway:
     available: bool = True
     self_id: str | None = None
     streams: dict[str, list[FakeStream]] = field(default_factory=dict)
+    images: dict[str, str] = field(default_factory=dict)  # tag -> image id
+    removed: list[str] = field(default_factory=list)
 
     def _check(self) -> None:
         if not self.available:
@@ -149,3 +153,37 @@ class FakeGateway:
         stream = FakeStream()
         self.streams.setdefault(container_id, []).append(stream)
         return stream
+
+    # ------------------------------------------------------------ images
+
+    def image_id(self, ref: str) -> str | None:
+        if ref in self.images:
+            return self.images[ref]
+        if not ref.startswith("sha256:") or ref in self.removed:
+            return None
+        # Like the containerd image store: an image with no tag left is gone.
+        return ref if ref in self.images.values() else None
+
+    def tag_image(self, image_id: str, repository: str, tag: str) -> bool:
+        self.images[f"{repository}:{tag}"] = image_id
+        return True
+
+    def in_use(self, image_id: str) -> bool:
+        return any(c.get("ImageID") == image_id for c in self.containers)
+
+    def remove_image(self, ref: str) -> bool:
+        if ref in self.images:  # a tag: untag it
+            del self.images[ref]
+            return True
+        if self.in_use(ref) or ref in self.images.values():
+            return False  # Docker refuses: in use, or still tagged
+        self.removed.append(ref)
+        return True
+
+    def remove_untagged(self, image_id: str) -> bool:
+        if image_id in self.images.values() or self.in_use(image_id):
+            return False
+        if image_id in self.removed:
+            return False
+        self.removed.append(image_id)
+        return True

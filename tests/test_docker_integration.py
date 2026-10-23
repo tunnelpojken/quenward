@@ -10,6 +10,7 @@ DOCKER_TEST_COMMAND (a JSON list, "{name}" is replaced) pick something else.
 import json
 import os
 import secrets
+import shutil
 import threading
 import time
 from collections.abc import Iterator
@@ -157,3 +158,217 @@ def test_unreachable_docker(
     with pytest.raises(WebSocketDisconnect) as e, _ws(client, "/ws/stacks/x/logs"):
         pass
     assert e.value.code == 1011
+
+
+# ---------------------------------------------------------------- Phase 4: real actions
+
+
+def _wait_job(client: TestClient, job_id: str, timeout: float = 120) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] != "running":
+            return job
+        time.sleep(0.2)
+    raise AssertionError(f"job {job_id} did not finish")
+
+
+def _escape(part: str) -> str:
+    return part.replace("$", "$$")  # compose interpolates $; the shell must see a plain $
+
+
+@pytest.fixture
+def real_stack(settings: Settings) -> Iterator[dict]:
+    """A real compose stack whose image we can 'update' by rebuilding its tag."""
+    import io
+    import shutil
+    import subprocess
+
+    import docker
+
+    client = docker.from_env()
+    try:
+        client.images.get(IMAGE)
+    except docker.errors.ImageNotFound:
+        client.images.pull(IMAGE)
+    name = f"acts{secrets.token_hex(4)}"
+    repo = f"itest-{name}/app"
+
+    def build(version: int) -> str:
+        dockerfile = f"FROM {IMAGE}\nLABEL itest.version={version}\n".encode()
+        return client.images.build(fileobj=io.BytesIO(dockerfile), tag=f"{repo}:latest")[0].id
+
+    folder = settings.stacks_dir / name
+    folder.mkdir(parents=True)
+
+    def command(service: str) -> list[str]:
+        return [_escape(p).replace("{name}", service) for p in COMMAND]
+
+    # JSON is valid YAML. ${LEAK_TEST:-clean} is interpolated by compose on purpose.
+    spec = {
+        "services": {
+            svc: {"image": f"{repo}:latest", "pull_policy": "never", "command": command(arg)}
+            for svc, arg in (("web", "web"), ("worker", "${LEAK_TEST:-clean}"))
+        }
+    }
+    (folder / "compose.yaml").write_text(json.dumps(spec, indent=2))
+    info = {"name": name, "repo": repo, "folder": folder, "build": build, "v1": build(1)}
+    try:
+        yield info
+    finally:
+        subprocess.run(  # noqa: S603 - fixed arguments
+            [
+                shutil.which("docker") or "/usr/bin/docker",
+                "compose",
+                "--project-directory",
+                str(folder),
+                "down",
+                "--timeout",
+                "2",
+            ],
+            cwd=folder,
+            capture_output=True,
+        )
+        for image in client.images.list(name=repo):
+            for tag in image.tags:
+                client.images.remove(tag, force=True)
+
+
+def _containers(name: str) -> dict:
+    import docker
+
+    found = docker.from_env().containers.list(
+        all=True, filters={"label": f"{COMPOSE_PROJECT}={name}"}
+    )
+    return {c.labels[COMPOSE_SERVICE]: c for c in found}
+
+
+def _act(client: TestClient, csrf: str, name: str, action: str) -> dict:
+    response = client.post(f"/api/stacks/{name}/{action}", headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 202, response.text
+    job = _wait_job(client, response.json()["id"])
+    assert job["status"] == "ok", "\n".join(job["lines"])
+    return job
+
+
+def test_real_start_stop_restart(
+    client: TestClient, csrf: str, real_stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If the app's environment leaked into compose, the worker would print "leaked".
+    monkeypatch.setenv("LEAK_TEST", "leaked")
+    name = real_stack["name"]
+
+    _act(client, csrf, name, "start")
+    containers = _containers(name)
+    assert {s: c.status for s, c in containers.items()} == {"web": "running", "worker": "running"}
+    time.sleep(1.5)
+    worker_log = containers["worker"].logs().decode()
+    assert "clean" in worker_log and "leaked" not in worker_log
+
+    _act(client, csrf, name, "stop")
+    assert {c.status for c in _containers(name).values()} == {"exited"}
+
+    started_before = containers["web"].attrs["State"]["StartedAt"]
+    _act(client, csrf, name, "restart")
+    after = _containers(name)
+    assert {c.status for c in after.values()} == {"running"}
+    assert after["web"].attrs["State"]["StartedAt"] != started_before
+
+
+def test_real_update_keeps_exactly_one_previous_image(
+    client: TestClient, csrf: str, real_stack
+) -> None:
+    import docker
+
+    images = docker.from_env().images
+    name, repo, build = real_stack["name"], real_stack["repo"], real_stack["build"]
+    v1 = real_stack["v1"]
+    rollback = f"{repo}:rollback-{name}-web"
+    _act(client, csrf, name, "start")
+
+    job = _act(client, csrf, name, "update")  # nothing new yet
+    assert "web: already up to date" in job["summary"]
+    with pytest.raises(docker.errors.ImageNotFound):
+        images.get(rollback)
+
+    v2 = build(2)  # stands in for a pull that brought a new image
+    job = _act(client, csrf, name, "update")
+    assert _containers(name)["web"].image.id == v2
+    assert images.get(rollback).id == v1
+    assert (
+        f"web: {v1.removeprefix('sha256:')[:12]} → {v2.removeprefix('sha256:')[:12]}"
+        in (job["summary"])
+    )
+
+    v3 = build(3)
+    _act(client, csrf, name, "update")
+    assert _containers(name)["web"].image.id == v3
+    assert images.get(rollback).id == v2
+    with pytest.raises(docker.errors.ImageNotFound):  # the generation before is gone
+        images.get(v1)
+    leftovers = [t for i in images.list(name=repo) for t in i.tags if ":pending-" in t]
+    assert leftovers == []
+
+
+def test_real_update_after_a_pull_outside_the_app(
+    client: TestClient, csrf: str, real_stack
+) -> None:
+    """The tag moves before Update is clicked (Dockge, a manual pull). On the
+    containerd image store that deletes the old image at once, unless the app's
+    `current` tag is keeping it alive."""
+    import docker
+
+    images = docker.from_env().images
+    name, repo, build = real_stack["name"], real_stack["repo"], real_stack["build"]
+    v1 = real_stack["v1"]
+    _act(client, csrf, name, "start")  # tags the running images as current
+    v2 = build(2)  # the outside "pull"
+    job = _act(client, csrf, name, "update")
+    assert not any("could not be kept" in line for line in job["summary"])
+    assert _containers(name)["web"].image.id == v2
+    assert images.get(f"{repo}:rollback-{name}-web").id == v1
+
+
+def test_real_updates_never_delete_another_stacks_image(
+    client: TestClient, csrf: str, real_stack, settings: Settings
+) -> None:
+    """Two stacks share an image and both keep v1 as their rollback. Updating one
+    of them again must not delete v1: it is still the other stack's rollback."""
+    import subprocess
+
+    import docker
+
+    images = docker.from_env().images
+    name, repo, build = real_stack["name"], real_stack["repo"], real_stack["build"]
+    v1 = real_stack["v1"]
+    other = f"{name}b"
+    folder = settings.stacks_dir / other
+    folder.mkdir()
+    spec = json.loads((real_stack["folder"] / "compose.yaml").read_text())
+    spec["services"] = {"db": spec["services"]["web"]}
+    (folder / "compose.yaml").write_text(json.dumps(spec))
+    try:
+        _act(client, csrf, name, "start")
+        _act(client, csrf, other, "start")
+        build(2)
+        _act(client, csrf, name, "update")
+        _act(client, csrf, other, "update")  # both now run v2 and keep v1 as rollback
+        assert images.get(f"{repo}:rollback-{other}-db").id == v1
+        build(3)
+        _act(client, csrf, name, "update")  # cleans up its own v1 ... but v1 is shared
+        assert images.get(f"{repo}:rollback-{name}-web").id != v1
+        assert images.get(f"{repo}:rollback-{other}-db").id == v1  # the other stack's is intact
+    finally:
+        subprocess.run(  # noqa: S603 - fixed arguments
+            [
+                shutil.which("docker") or "/usr/bin/docker",
+                "compose",
+                "--project-directory",
+                str(folder),
+                "down",
+                "--timeout",
+                "2",
+            ],
+            cwd=folder,
+            capture_output=True,
+        )

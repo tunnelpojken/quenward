@@ -1,8 +1,44 @@
 <script>
+  import ActionBar from "./ActionBar.svelte";
+  import JobPanel from "./JobPanel.svelte";
   import LogViewer from "./LogViewer.svelte";
   import { STATUS_LABEL, ago } from "./format.js";
 
-  let { detail, onExpired, onBack } = $props();
+  let { detail, onExpired, onBack, onChanged } = $props();
+
+  // The action being shown: one started here, or one already running when the
+  // page was opened (the server reports it in detail.job).
+  let jobId = $state(null);
+  let jobRunning = $state(false);
+  $effect(() => {
+    if (detail.job && !jobId) {
+      jobId = detail.job;
+      jobRunning = true;
+    }
+  });
+
+  function started(id) {
+    jobId = id;
+    jobRunning = true;
+  }
+
+  function finished() {
+    jobRunning = false;
+    onChanged();
+  }
+
+  // A new log stream whenever the running containers change: an update replaces
+  // them, stop and start change which ones run, and a restart (by the user or by
+  // Docker's restart policy) keeps the ids but changes when they started.
+  let streamKey = $derived(
+    detail.name +
+      "|" +
+      detail.containers
+        .filter((c) => c.state === "running")
+        .map((c) => `${c.id}@${c.started_at}`)
+        .sort()
+        .join(","),
+  );
 
   // Re-render "up 5m" style times every 30 s without asking the server.
   let now = $state(Date.now());
@@ -33,6 +69,13 @@
     <span class="muted file">{detail.compose_file}</span>
   </header>
 
+  <ActionBar {detail} busy={jobRunning || !!detail.job} onStarted={started} {onExpired} />
+  {#if jobId}
+    {#key jobId}
+      <JobPanel {jobId} onFinished={finished} onDismiss={() => (jobId = null)} {onExpired} />
+    {/key}
+  {/if}
+
   {#if detail.self}
     <p class="notice info">
       This is the stack this app runs in. It stays read-only here: change it over SSH.
@@ -41,6 +84,11 @@
   {#if detail.error}<p class="notice error">{detail.error}</p>{/if}
   {#if detail.missing_services.length}
     <p class="notice info">Not created yet: {detail.missing_services.join(", ")}</p>
+  {/if}
+  {#if detail.buildable.length}
+    <p class="notice info">
+      Built locally, so skipped by Update: {detail.buildable.join(", ")}
+    </p>
   {/if}
 
   <section class="containers" aria-label="Containers">
@@ -71,7 +119,7 @@
   </section>
 
   {#if detail.containers.length}
-    {#key detail.name}
+    {#key streamKey}
       <LogViewer stack={detail.name} {services} {onExpired} />
     {/key}
   {/if}

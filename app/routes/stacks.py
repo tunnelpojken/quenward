@@ -7,13 +7,14 @@ import sqlite3
 from typing import Any
 
 import docker.errors
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, WebSocket, status
 from fastapi.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
 
 from app.auth import sessions
-from app.auth.deps import CurrentUser, get_db, require_user, require_user_ws
+from app.auth.deps import CurrentUser, client_ip, get_db, require_user, require_user_ws
 from app.stacks import service
+from app.stacks.actions import ACTIONS, ActionRefused
 from app.stacks.gateway import DockerUnavailable
 from app.stacks.logs import LogFollower, Target, now
 
@@ -71,7 +72,43 @@ def get_stack(name: str, request: Request) -> dict[str, Any]:
         **state.public(),
         "containers": containers,
         "missing_services": [s for s in state.stack.services if s not in with_container],
+        "buildable": list(state.stack.buildable),
+        "job": request.app.state.jobs.running_job(state.stack.name),
     }
+
+
+@router.post("/stacks/{name}/{action}", status_code=status.HTTP_202_ACCEPTED)
+def stack_action(
+    name: str,
+    request: Request,
+    action: str = Path(pattern=f"^({'|'.join(ACTIONS)})$"),
+    user: CurrentUser = Depends(require_user),
+) -> dict[str, Any]:
+    """Start an action in the background; poll /api/jobs/{id} for its output."""
+    try:
+        state = service.get_stack(request.app.state.settings, request.app.state.docker, name)
+        job = request.app.state.jobs.start(state, action, user.id, client_ip(request))
+    except service.StackNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such stack") from None
+    except DockerUnavailable as e:
+        raise _unavailable(e) from None
+    except ActionRefused as e:
+        detail: dict[str, Any] = {"message": str(e), "job": e.job_id}
+        raise HTTPException(e.status, detail) from None
+    return job.public()
+
+
+@router.get("/jobs/{job_id}")
+def get_job(
+    job_id: str = Path(pattern=r"^[0-9a-f]{16}$"),
+    after: int = Query(0, ge=0),
+    *,
+    request: Request,
+) -> dict[str, Any]:
+    job = request.app.state.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such job")
+    return job.public(after)
 
 
 def _socket_slot(websocket: WebSocket, session_id: int) -> bool:
@@ -175,6 +212,12 @@ async def _pump(
                 pass
             if batch:
                 await websocket.send_json({"type": "lines", "lines": [x.public() for x in batch]})
+            if follower.finished() and follower.queue.empty():
+                # The containers stopped or were replaced (e.g. by an update). The
+                # browser opens a new stream when the stack's containers change.
+                await websocket.send_json({"type": "ended"})
+                await websocket.close(code=4410, reason="Containers stopped or replaced")
+                return
             if follower.dropped != reported_drops:
                 await websocket.send_json({"type": "dropped", "count": follower.dropped})
                 reported_drops = follower.dropped
