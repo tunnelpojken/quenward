@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db
+from app import audit, db
 from app.config import Settings
 from app.stacks import compose
 from app.stacks.actions import JobManager, repository
@@ -320,6 +320,23 @@ def test_audit_has_the_changes_but_no_output(
     )
     assert detail["changes"] == ["pihole: pihole-v1 → pihole-v2"]
     assert "fake compose" not in json.dumps(detail)
+
+
+def test_audit_is_written_before_the_job_reports_finished(
+    client: TestClient, csrf: str, setup, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A slow audit write (a busy disk, a shared CI runner) must not let anyone see
+    # the job finished while its closing entry is still missing.
+    slow_record = audit.record
+
+    def record(conn, action, result, **kwargs):
+        if result != "started":
+            time.sleep(0.3)
+        return slow_record(conn, action, result, **kwargs)
+
+    monkeypatch.setattr(audit, "record", record)
+    _wait(client, _act(client, csrf, "pihole", "restart").json()["id"])
+    assert ("stack_restart", "ok", "pihole") in _audit(settings)
 
 
 # ---------------------------------------------------------------- the compose runner itself

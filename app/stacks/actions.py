@@ -211,10 +211,10 @@ class JobManager:
             log.exception("Action %s on %s failed", job.action, job.stack)
             job.add("The action failed unexpectedly. See the app's log for details.")
         finally:
-            job.status = "ok" if ok else "error"
-            job.finished_at = clock.to_iso(clock.now())
-            with self._lock:
-                self._running.pop(job.stack, None)
+            # The audit entry is written before the job is reported finished and the
+            # stack is released. Otherwise someone seeing "done" could read the audit
+            # log before the entry is there, and a next action on the stack could be
+            # audited before this one has ended.
             try:
                 self._audit(
                     job.action,
@@ -227,6 +227,10 @@ class JobManager:
                 )
             except Exception:
                 log.exception("Could not write the audit entry for job %s", job.id)
+            job.finished_at = clock.to_iso(clock.now())
+            job.status = "ok" if ok else "error"
+            with self._lock:
+                self._running.pop(job.stack, None)
 
     def _mark_current(self, stack_name: str, project: str) -> None:
         """Tag each running service's image as `current-<project>-<service>`.
