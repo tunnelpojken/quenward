@@ -27,14 +27,15 @@
     onChanged();
   }
 
-  // A new log stream whenever the set of running containers changes (an update
-  // replaces containers; stop and start change which ones run).
+  // A new log stream whenever the running containers change: an update replaces
+  // them, stop and start change which ones run, and a restart (by the user or by
+  // Docker's restart policy) keeps the ids but changes when they started.
   let streamKey = $derived(
     detail.name +
       "|" +
       detail.containers
         .filter((c) => c.state === "running")
-        .map((c) => c.id)
+        .map((c) => `${c.id}@${c.started_at}`)
         .sort()
         .join(","),
   );
