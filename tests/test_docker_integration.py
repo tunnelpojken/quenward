@@ -372,3 +372,56 @@ def test_real_updates_never_delete_another_stacks_image(
             cwd=folder,
             capture_output=True,
         )
+
+
+# ---------------------------------------------------------------- Phase 5: terminal
+
+
+def _live_pids(container) -> set[str]:
+    """Host pids of the container's processes, without zombies (already dead)."""
+    container.reload()
+    top = container.top(ps_args="-o pid,stat")
+    return {p[0] for p in top["Processes"] if not p[1].startswith("Z")}
+
+
+def test_real_terminal_runs_commands_and_closing_ends_everything(
+    client: TestClient, csrf: str, stack
+) -> None:
+    from tests.test_terminal import Term
+
+    web = stack["containers"]["web"]
+    before = _live_pids(web)
+    with _ws(client, f"/ws/stacks/itest/terminal?container={web.id[:12]}&rows=30&cols=100") as ws:
+        t = Term(ws)
+        t.read_until(b"# ")
+        assert t.control[0]["type"] == "ready"
+        assert t.control[0]["shell"] == "sh"  # busybox has no bash: the fallback
+        assert b"\x1e" not in t.output
+        # Evaluated by the shell, not just echoed back: 40+2 must become 42.
+        t.type("echo result-$((40+2))\n")
+        t.read_until(b"result-42")
+        t.type("stty size\n")
+        t.read_until(b"30 100")
+        # Things started from the shell, including one that ignores a hangup.
+        t.type("sleep 901 & (trap '' HUP; sleep 902) &\n")
+        t.type("echo started\n")
+        t.read_until(b"started\r\n")
+        during = _live_pids(web)
+        assert len(during - before) >= 3, "the shell and both background jobs"
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and _live_pids(web) & (during - before):
+        time.sleep(0.2)
+    assert not _live_pids(web) & (during - before), "processes outlived the terminal"
+
+
+def test_real_terminal_exit_reports_the_code(client: TestClient, csrf: str, stack) -> None:
+    from tests.test_terminal import Term
+
+    worker = stack["containers"]["worker"]
+    with _ws(client, f"/ws/stacks/itest/terminal?container={worker.name}") as ws:
+        t = Term(ws)
+        t.read_until(b"# ")
+        t.type("exit 7\n")
+        assert t.wait_closed() == 4410
+        assert {"type": "exit", "code": 7} in t.control

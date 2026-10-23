@@ -302,3 +302,79 @@ class DockerGateway:
         if tags[0]:
             return False
         return self.remove_image(image_id)
+
+    # ------------------------------------------------------------ terminal (exec)
+
+    def open_shell(self, container_id: str) -> "ShellHandle":
+        """Start an interactive shell (bash if present, else sh) with a TTY."""
+
+        def start(c: docker.DockerClient) -> ShellHandle:
+            exec_id = c.api.exec_create(
+                container_id,
+                ["/bin/sh", "-c", SHELL_PROBE],
+                stdin=True,
+                tty=True,
+                environment={"TERM": "xterm-256color"},
+            )["Id"]
+            response = c.api.exec_start(exec_id, tty=True, socket=True)
+            # The SDK wraps the hijacked connection; the raw socket is what we read.
+            raw = getattr(response, "_sock", response)
+            return ShellHandle(exec_id=exec_id, sock=raw)
+
+        return self._call(start)
+
+    def resize_shell(self, exec_id: str, rows: int, cols: int) -> None:
+        self._call(lambda c: c.api.exec_resize(exec_id, height=rows, width=cols))
+
+    def shell_exit_code(self, exec_id: str) -> int | None:
+        """The exit code once the shell has ended; None while it still runs."""
+        info = self._call(lambda c: c.api.exec_inspect(exec_id))
+        return None if info.get("Running") else info.get("ExitCode")
+
+    def end_shell_session(self, container_id: str, pid: int) -> None:
+        """End the shell and everything started from it.
+
+        Closing the connection does not stop a Docker exec. A TTY exec makes the
+        shell a session leader, so every process it started shares its session
+        id: those get a hangup, then a kill one second later. Uses shell builtins
+        only, so it works in minimal images. The pid is passed as an argument,
+        never pasted into the script.
+        """
+        if pid <= 1:
+            raise ValueError("refusing to signal pid 0 or the container's init")
+        self._call(
+            lambda c: c.api.exec_start(
+                c.api.exec_create(container_id, ["/bin/sh", "-c", _END_SESSION, "end", str(pid)])[
+                    "Id"
+                ]
+            )
+        )
+
+
+# The first thing the shell prints is a marker with its name and pid (inside the
+# container), read and removed by the app before any output reaches the browser.
+# \036 is the ASCII record separator, which never appears in normal output.
+SHELL_PROBE = (
+    r'if command -v bash >/dev/null 2>&1; then printf "\036bash %s\036" "$$"; exec bash; fi; '
+    r'printf "\036sh %s\036" "$$"; exec sh'
+)
+
+_END_SESSION = r"""
+sid=$1
+for sig in HUP KILL; do
+  for d in /proc/[0-9]*; do
+    read -r s < "$d/stat" 2>/dev/null || continue
+    s=${s##*) }
+    set -- $s
+    [ "$4" = "$sid" ] && kill -"$sig" "${d#/proc/}" 2>/dev/null
+  done
+  [ "$sig" = HUP ] && sleep 1
+done
+true
+"""
+
+
+@dataclass
+class ShellHandle:
+    exec_id: str
+    sock: socket.socket

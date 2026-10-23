@@ -2,6 +2,7 @@
   import ActionBar from "./ActionBar.svelte";
   import JobPanel from "./JobPanel.svelte";
   import LogViewer from "./LogViewer.svelte";
+  import TerminalPanel from "./TerminalPanel.svelte";
   import { STATUS_LABEL, ago } from "./format.js";
 
   let { detail, onExpired, onBack, onChanged } = $props();
@@ -16,6 +17,9 @@
       jobRunning = true;
     }
   });
+
+  // The container a terminal is open for (one per stack view).
+  let terminalFor = $state(null);
 
   function started(id) {
     jobId = id;
@@ -93,7 +97,7 @@
 
   <section class="containers" aria-label="Containers">
     <div class="c-row c-head" aria-hidden="true">
-      <span>Service</span><span>State</span><span>Image</span><span>Ports</span><span>Restarts</span>
+      <span>Service</span><span>State</span><span>Image</span><span>Ports</span><span>Restarts</span><span></span>
     </div>
     {#each detail.containers as c (c.id)}
       <div class="c-row">
@@ -112,11 +116,27 @@
           {#each c.ports as port (port)}<span class="port">{port}</span>{:else}<span class="muted none">–</span>{/each}
         </span>
         <span class="c-restarts"><span class="label">Restarts</span>{c.restart_count}</span>
+        <span class="c-tools">
+          {#if c.state === "running" && !detail.self}
+            <button
+              type="button"
+              class="secondary small"
+              aria-pressed={terminalFor?.id === c.id}
+              onclick={() => (terminalFor = { id: c.id, name: c.name, service: c.service })}
+            >Terminal</button>
+          {/if}
+        </span>
       </div>
     {:else}
       <p class="muted">No containers. This stack has not been started.</p>
     {/each}
   </section>
+
+  {#if terminalFor}
+    {#key terminalFor.id}
+      <TerminalPanel stack={detail.name} container={terminalFor} onClose={() => (terminalFor = null)} {onExpired} />
+    {/key}
+  {/if}
 
   {#if detail.containers.length}
     {#key streamKey}

@@ -2,6 +2,7 @@
   import Notice from "../lib/Notice.svelte";
   import StackList from "../lib/StackList.svelte";
   import StackView from "../lib/StackView.svelte";
+  import TerminalHistory from "./TerminalHistory.svelte";
   import { getStack, getStacks, logout } from "../lib/api.js";
 
   let { session, onLoggedOut, onExpired } = $props();
@@ -15,6 +16,8 @@
   let dockerError = $state("");
   let loaded = $state(false);
   let selected = $state(stackFromHash());
+  // null: not on the history page; "": the list; otherwise one session's id.
+  let history = $state(historyFromHash());
   let detail = $state(null);
   let detailError = $state("");
   let busy = $state(false);
@@ -34,6 +37,17 @@
   function stackFromHash() {
     const m = location.hash.match(/^#\/stack\/(.+)$/);
     return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  function historyFromHash() {
+    const m = location.hash.match(/^#\/terminals(?:\/([0-9a-f]{16}))?$/);
+    return m ? m[1] || "" : null;
+  }
+
+  function onHashChange() {
+    if (location.hash.startsWith("#/reset/")) return;
+    selected = stackFromHash();
+    history = historyFromHash();
   }
 
   function select(name) {
@@ -113,12 +127,13 @@
   }
 </script>
 
-<svelte:window onhashchange={() => location.hash.startsWith("#/reset/") || (selected = stackFromHash())} />
+<svelte:window onhashchange={onHashChange} />
 
 <div class="app-shell">
   <header class="topbar">
     <span class="brand-mark">docker-project</span>
     <span class="topbar-spacer"></span>
+    <a class="topbar-link" class:active={history !== null} href="#/terminals">Terminal history</a>
     <span class="muted user">{session.username}</span>
     <button type="button" class="secondary small" onclick={doLogout} disabled={busy}>Log out</button>
   </header>
@@ -132,7 +147,7 @@
     </p>
   {/if}
 
-  <div class="layout" class:has-selection={selected}>
+  <div class="layout" class:has-selection={selected || history !== null}>
     <aside class="sidebar">
       {#if loaded}
         <StackList {stacks} {selected} onSelect={select} />
@@ -141,7 +156,11 @@
       {/if}
     </aside>
     <main class="main">
-      {#if detail}
+      {#if history !== null}
+        {#key history}
+          <TerminalHistory sessionId={history} {onExpired} />
+        {/key}
+      {:else if detail}
         <!-- A fresh view per stack: a job panel or confirmation must never carry
              over to another stack. -->
         {#key detail.name}

@@ -19,6 +19,9 @@ services:
       # records that path on every container, and that is how containers are
       # matched to their stack folder.
       STACKS_DIR: ${PWD}/dev-stacks
+      # Terminal transcripts are off without a key. To try them, see "Terminal"
+      # in the README, then uncomment this and the matching volume below.
+      # TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
     # Access to the Docker socket is root-equivalent on this machine. The app
     # gets it through the socket's group instead of running as root. Set
     # DOCKER_GID in .env as shown above.
@@ -29,6 +32,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Read-only until Phase 5 (the compose editor) needs to write.
       - ${PWD}/dev-stacks:${PWD}/dev-stacks:ro
+      # - ./secrets/transcript.key:/run/secrets/transcript.key:ro
     # Hardening: read-only filesystem, no Linux capabilities, no privilege escalation.
     read_only: true
     tmpfs:
