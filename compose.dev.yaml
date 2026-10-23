@@ -1,9 +1,9 @@
-# Development compose file.
-#   docker compose -f compose.dev.yaml up --build
-# Then open http://127.0.0.1:5005
+# Development compose file. From the repository folder:
 #
-# No Docker socket is mounted yet: the app gets access to Docker in Phase 3,
-# after authentication has passed its test gate.
+#   echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
+#   docker compose -f compose.dev.yaml up --build -d
+#
+# Then open http://127.0.0.1:5005
 
 services:
   app:
@@ -14,8 +14,21 @@ services:
     ports:
       # Only reachable from this machine, never from the network.
       - "127.0.0.1:5005:5005"
+    environment:
+      # The stacks folder is mounted at the same path as on the host: compose
+      # records that path on every container, and that is how containers are
+      # matched to their stack folder.
+      STACKS_DIR: ${PWD}/dev-stacks
+    # Access to the Docker socket is root-equivalent on this machine. The app
+    # gets it through the socket's group instead of running as root. Set
+    # DOCKER_GID in .env as shown above.
+    group_add:
+      - "${DOCKER_GID:?Set DOCKER_GID in .env first, see the top of this file}"
     volumes:
       - data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only until Phase 5 (the compose editor) needs to write.
+      - ${PWD}/dev-stacks:${PWD}/dev-stacks:ro
     # Hardening: read-only filesystem, no Linux capabilities, no privilege escalation.
     read_only: true
     tmpfs:

@@ -1,0 +1,5 @@
+# Never started: shows how a stack that is not deployed looks.
+services:
+  idle:
+    image: busybox:1.37
+    command: ["sleep", "infinity"]

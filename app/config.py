@@ -98,6 +98,7 @@ class Settings:
     session_idle: timedelta = timedelta(minutes=30)
     session_absolute: timedelta = timedelta(hours=3)
     reset_link_lifetime: timedelta = timedelta(minutes=15)
+    ws_session_check: timedelta = timedelta(seconds=5)
     ntfy: NtfyConfig | None = None
 
     @property

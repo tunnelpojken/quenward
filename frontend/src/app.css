@@ -13,6 +13,16 @@
   --bad-bg: #fdecea;
   --info-bg: #e8f1fd;
   --code-bg: #eef0f3;
+  --warn: #b26a00;
+  --hover: #eef1f5;
+  --active: #e3ecfb;
+  --log-bg: #fbfbfc;
+  --src-0: #2f6fde;
+  --src-1: #b0459c;
+  --src-2: #1f8a6a;
+  --src-3: #8a5a2b;
+  --src-4: #6b5bd6;
+  --src-5: #0e7c9a;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -33,6 +43,16 @@
     --bad-bg: #3a1c1a;
     --info-bg: #17263d;
     --code-bg: #232931;
+    --warn: #e2a443;
+    --hover: #20252c;
+    --active: #1d2b42;
+    --log-bg: #0d1014;
+    --src-0: #7aa7f5;
+    --src-1: #e08bd0;
+    --src-2: #5fd0a8;
+    --src-3: #c9a27a;
+    --src-4: #a99cf5;
+    --src-5: #5cc8e0;
   }
 }
 
@@ -168,4 +188,513 @@ code {
   padding: 1px 4px;
   background: var(--code-bg);
   border-radius: 4px;
+}
+
+/* ------------------------------------------------------------ shared bits */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+button.small {
+  padding: 5px 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+select,
+input[type="search"] {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.pad {
+  padding: 16px;
+}
+
+/* ------------------------------------------------------------ dashboard shell */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand-mark {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.user {
+  font-size: 0.9rem;
+}
+
+.app-shell > .notice {
+  margin: 12px 16px 0;
+}
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.main {
+  min-width: 0;
+  padding: 16px 20px 24px;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  min-height: 40vh;
+  text-align: center;
+}
+
+.summary {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+/* ------------------------------------------------------------ stack list */
+
+.stack-list {
+  padding: 12px 8px;
+}
+
+.stack-list .filter {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.stack-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stack-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  font-weight: 400;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stack-item:hover {
+  background: var(--hover);
+}
+
+.stack-item.active {
+  background: var(--active);
+  font-weight: 600;
+}
+
+.stack-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  padding: 8px;
+  font-size: 0.9rem;
+}
+
+.tag {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.tag.bad {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+/* Status: always paired with a text label, never colour alone. */
+.dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot.running {
+  background: var(--ok);
+}
+
+.dot.partial {
+  background: var(--warn);
+}
+
+.dot.not_deployed {
+  background: transparent;
+  border: 1.5px solid var(--muted);
+}
+
+.dot.unhealthy {
+  background: var(--bad);
+}
+
+/* ------------------------------------------------------------ stack view */
+
+.stack-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stack-head h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.stack-head .file {
+  font-size: 0.85rem;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+.back {
+  display: none;
+}
+
+.badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--code-bg);
+}
+
+.badge.running {
+  color: var(--ok);
+}
+
+.badge.partial {
+  color: var(--warn);
+}
+
+.badge.bad {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+
+.stack-view > .notice {
+  margin-bottom: 12px;
+}
+
+.containers {
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.c-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(130px, 1fr) minmax(140px, 1.3fr) minmax(120px, 1fr) 80px;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.c-row:first-child {
+  border-top: 0;
+}
+
+.c-head {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.c-service {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.c-service strong {
+  overflow-wrap: anywhere;
+}
+
+.c-name {
+  grid-column: 2;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.c-image {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.c-ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.port {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.75rem;
+  padding: 1px 5px;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+
+.c-restarts .label {
+  display: none;
+  margin-right: 4px;
+}
+
+.health {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.75rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--ok);
+  border: 1px solid currentColor;
+}
+
+.health.unhealthy {
+  color: var(--bad);
+}
+
+.health.starting {
+  color: var(--warn);
+}
+
+/* ------------------------------------------------------------ logs */
+
+.logs {
+  position: relative;
+}
+
+.logs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.logs-bar h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.live-state {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.live-state.live {
+  color: var(--ok);
+}
+
+.live-state.reconnecting {
+  color: var(--warn);
+}
+
+.logs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+
+.logs > .notice {
+  margin-bottom: 8px;
+}
+
+.log-box {
+  height: max(320px, 55vh);
+  overflow: auto;
+  padding: 8px 0;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ln {
+  display: flex;
+  gap: 10px;
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.log-box.wrap .ln {
+  white-space: pre-wrap;
+}
+
+.log-box.wrap .msg {
+  overflow-wrap: anywhere;
+}
+
+.ln:hover {
+  background: var(--hover);
+}
+
+.ts {
+  flex: none;
+  color: var(--muted);
+}
+
+.src {
+  flex: none;
+  min-width: 8ch;
+  font-weight: 600;
+}
+
+.src-0 { color: var(--src-0); }
+.src-1 { color: var(--src-1); }
+.src-2 { color: var(--src-2); }
+.src-3 { color: var(--src-3); }
+.src-4 { color: var(--src-4); }
+.src-5 { color: var(--src-5); }
+
+.log-empty {
+  padding: 0 12px;
+  font-family: system-ui, sans-serif;
+}
+
+.jump {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+}
+
+/* ------------------------------------------------------------ narrow screens */
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+  }
+
+  /* List first; picking a stack shows the stack with a way back. */
+  .layout.has-selection .sidebar,
+  .layout:not(.has-selection) .main {
+    display: none;
+  }
+
+  .main {
+    padding: 12px 16px 24px;
+  }
+
+  .back {
+    display: inline-block;
+  }
+
+  .c-head {
+    display: none;
+  }
+
+  .c-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .c-restarts .label {
+    display: inline;
+  }
+
+  .c-ports .none {
+    display: none;
+  }
+
+  .logs-controls {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .logs-controls input[type="search"] {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ts {
+    display: none;
+  }
 }

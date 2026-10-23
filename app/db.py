@@ -29,7 +29,11 @@ def _ensure_private_file(path: Path) -> None:
 def connect(path: Path) -> sqlite3.Connection:
     _ensure_private_file(path)
     # autocommit=True: we manage transactions explicitly with BEGIN/COMMIT.
-    conn = sqlite3.connect(path, autocommit=True)
+    # check_same_thread=False: FastAPI may open a connection in one worker thread
+    # and use it in another (or in the event loop, for WebSockets). That is safe
+    # because each connection belongs to a single request and is used by one
+    # step at a time, never concurrently.
+    conn = sqlite3.connect(path, autocommit=True, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

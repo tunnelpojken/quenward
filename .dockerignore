@@ -13,3 +13,4 @@ frontend/node_modules
 frontend/dist
 README.md
 compose*.yaml
+dev-stacks
