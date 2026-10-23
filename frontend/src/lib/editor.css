@@ -20,6 +20,7 @@
 }
 
 .cm-scroller {
+  font-variant-ligatures: none;
   font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   line-height: 1.5;
 }

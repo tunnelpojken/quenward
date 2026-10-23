@@ -60,6 +60,12 @@
   box-sizing: border-box;
 }
 
+/* The bundled monospace font draws "->" and "!=" as single symbols (ligatures).
+   Text here is copied into terminals and compose files, so show it as typed. */
+body {
+  font-variant-ligatures: none;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
