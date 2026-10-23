@@ -187,7 +187,8 @@ def put_compose(
         removed=saved.removed,
         ip=ip,
     )
-    return {"etag": saved.etag, "warnings": saved.warnings}
+    # The text as written, so the editor shows the file exactly as it is now.
+    return {"etag": saved.etag, "content": saved.content, "warnings": saved.warnings}
 
 
 @router.get("/jobs/{job_id}")

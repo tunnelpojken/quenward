@@ -93,8 +93,16 @@
     const text = view.state.doc.toString();
     try {
       const result = await saveCompose(stack, text, file.etag);
-      file = { ...file, etag: result.etag, content: text };
-      saved = text;
+      // Show the file exactly as written: the server may have added a final newline.
+      const written = result.content;
+      file = { ...file, etag: result.etag, content: written };
+      saved = written;
+      if (written !== text) {
+        const changes = written.startsWith(text)
+          ? { from: text.length, insert: written.slice(text.length) }
+          : { from: 0, to: view.state.doc.length, insert: written };
+        view.dispatch({ changes });
+      }
       warnings = result.warnings;
       setDirty(false);
       phase = "saved";

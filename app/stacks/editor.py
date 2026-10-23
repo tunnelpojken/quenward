@@ -53,6 +53,7 @@ class ComposeFile:
 
 @dataclass(frozen=True)
 class Saved:
+    content: str  # exactly what was written (a final newline may have been added)
     etag: str
     old_etag: str
     added: int
@@ -252,5 +253,10 @@ def save(
     added = sum(1 for d in diff if d.startswith("+") and not d.startswith("+++"))
     removed = sum(1 for d in diff if d.startswith("-") and not d.startswith("---"))
     return Saved(
-        etag=etag(data), old_etag=expected_etag, added=added, removed=removed, warnings=warnings
+        content=text,
+        etag=etag(data),
+        old_etag=expected_etag,
+        added=added,
+        removed=removed,
+        warnings=warnings,
     )

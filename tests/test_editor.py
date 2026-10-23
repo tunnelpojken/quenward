@@ -195,6 +195,7 @@ def test_a_final_newline_is_added(
     response = _put(client, csrf, NEW.rstrip("\n"), _get(client)["etag"])
     assert response.status_code == 200
     assert stack_file.read_text() == NEW
+    assert response.json()["content"] == NEW, "the editor is told what was written"
     assert response.json()["etag"] == _get(client)["etag"]
 
 
