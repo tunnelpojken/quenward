@@ -377,11 +377,11 @@ def test_real_updates_never_delete_another_stacks_image(
 # ---------------------------------------------------------------- Phase 5: terminal
 
 
-def _live_pids(container) -> set[str]:
-    """Host pids of the container's processes, without zombies (already dead)."""
+def _processes(container) -> list[dict[str, str]]:
+    """The container's processes as seen from the host: pid, session, state, command."""
     container.reload()
-    top = container.top(ps_args="-o pid,stat")
-    return {p[0] for p in top["Processes"] if not p[1].startswith("Z")}
+    top = container.top(ps_args="-o pid,sid,stat,args")
+    return [dict(zip(("pid", "sid", "stat", "args"), p, strict=False)) for p in top["Processes"]]
 
 
 def test_real_terminal_runs_commands_and_closing_ends_everything(
@@ -390,7 +390,7 @@ def test_real_terminal_runs_commands_and_closing_ends_everything(
     from tests.test_terminal import Term
 
     web = stack["containers"]["web"]
-    before = _live_pids(web)
+    before = {p["pid"] for p in _processes(web)}
     with _ws(client, f"/ws/stacks/itest/terminal?container={web.id[:12]}&rows=30&cols=100") as ws:
         t = Term(ws)
         t.read_until(b"# ")
@@ -406,13 +406,21 @@ def test_real_terminal_runs_commands_and_closing_ends_everything(
         t.type("sleep 901 & (trap '' HUP; sleep 902) &\n")
         t.type("echo started\n")
         t.read_until(b"started\r\n")
-        during = _live_pids(web)
-        assert len(during - before) >= 3, "the shell and both background jobs"
+        during = _processes(web)
+        # The terminal's shell is a new session leader (pid == session id); everything
+        # it started shares that session. The container's own processes do not.
+        leaders = {p["sid"] for p in during if p["pid"] == p["sid"] and p["pid"] not in before}
+        assert len(leaders) == 1, during
+        session = leaders.pop()
+        assert len([p for p in during if p["sid"] == session]) >= 3, during
+
+    def leftovers() -> list[dict[str, str]]:
+        return [p for p in _processes(web) if p["sid"] == session and not p["stat"].startswith("Z")]
 
     deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and _live_pids(web) & (during - before):
+    while time.monotonic() < deadline and leftovers():
         time.sleep(0.2)
-    assert not _live_pids(web) & (during - before), "processes outlived the terminal"
+    assert not leftovers(), f"outlived the terminal: {leftovers()} (all: {_processes(web)})"
 
 
 def test_real_terminal_exit_reports_the_code(client: TestClient, csrf: str, stack) -> None:

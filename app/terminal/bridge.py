@@ -14,7 +14,10 @@ import logging
 import re
 import socket
 import threading
+import time
 from dataclasses import dataclass
+
+import docker.errors
 
 from app.stacks.gateway import DockerGateway, DockerUnavailable, ShellHandle
 
@@ -124,14 +127,31 @@ class Bridge:
         self._close_socket()
         if self.handle is None or self.started is None:
             return None
-        try:
-            self.gateway.end_shell_session(self.container_id, self.started.pid)
-        except Exception as e:  # the container may be gone already; nothing left to end
-            log.info("Ending the terminal's shell failed: %s", type(e).__name__)
+        self._end_session()
         try:
             return self.gateway.shell_exit_code(self.handle.exec_id)
         except Exception:
             return None
+
+    def _end_session(self) -> None:
+        """Retry once: a shell left running after a hiccup would stay open in the container."""
+        if self.handle is None or self.started is None:
+            return
+        for attempt in (1, 2):
+            try:
+                self.gateway.end_shell_session(self.container_id, self.started.pid)
+                return
+            except docker.errors.NotFound:
+                return  # the container is gone, and its processes with it
+            except Exception as e:
+                if attempt == 2:
+                    log.warning(
+                        "Could not end a terminal's shell in %s (%s); it may still be running",
+                        self.container_id,
+                        type(e).__name__,
+                    )
+                    return
+                time.sleep(0.5)
 
     # -- the reading thread --------------------------------------------------
 

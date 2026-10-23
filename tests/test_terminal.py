@@ -538,3 +538,30 @@ def test_reader_thread_ends_with_the_shell(fake: FakeGateway) -> None:
     before = threading.active_count()
     asyncio.run(scenario())
     assert threading.active_count() <= before + 1  # the fake shell's own thread may linger
+
+
+def test_ending_the_shell_is_retried_once(
+    term: Any, fake: FakeGateway, monkeypatch: pytest.MonkeyPatch, caplog: Any
+) -> None:
+    from app.stacks.gateway import DockerUnavailable
+
+    real = fake.end_shell_session
+    failures = {"left": 1}
+
+    def flaky(container_id: str, pid: int) -> None:
+        if failures["left"]:
+            failures["left"] -= 1
+            raise DockerUnavailable("Docker is not reachable")
+        real(container_id, pid)
+
+    monkeypatch.setattr(fake, "end_shell_session", flaky)
+    t = term()
+    t.read_until(b"$ ")
+    t.ws.close()
+    _eventually(lambda: (PIHOLE_ID, 40) in fake.ended_sessions)
+
+    failures["left"] = 2  # fails both times: say so loudly
+    t = term(_url(container=UNBOUND_ID))
+    t.read_until(b"$ ")
+    t.ws.close()
+    _eventually(lambda: "it may still be running" in caplog.text)
