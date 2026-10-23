@@ -579,3 +579,25 @@ def test_cleanup_survives_the_server_cancelling_the_connection(
             Term(ws).read_until(b"$ ")
     _eventually(lambda: len(fake.ended_sessions) == rounds)
     assert client.app.state.terminal_sockets == {}, "a terminal slot leaked"
+
+
+def test_a_closed_terminal_frees_its_slot_at_once(
+    client: TestClient, term: Any, fake: FakeGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ending a shell takes about a second (hangup, wait, kill). Reopening a terminal
+    meanwhile must not be refused with "Too many terminals open"."""
+    real = fake.end_shell_session
+
+    def slow(container_id: str, pid: int) -> None:
+        time.sleep(1.0)
+        real(container_id, pid)
+
+    monkeypatch.setattr(fake, "end_shell_session", slow)
+    term().read_until(b"$ ")
+    second = term(_url(container=UNBOUND_ID))
+    second.read_until(b"$ ")
+    second.ws.close()  # the shell is now being ended, which takes a second
+    time.sleep(0.2)
+    third = term()
+    third.read_until(b"$ ")  # refused with 1013 if the slot were still held
+    _eventually(lambda: len(fake.ended_sessions) == 1)

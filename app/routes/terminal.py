@@ -168,36 +168,36 @@ async def terminal(
     except WebSocketDisconnect:
         reason = "closed"
     finally:
+        # A closed terminal stops counting at once, so reopening one is never refused
+        # while the old shell is still being ended (that takes about a second).
+        _release(app, user.session.id)
         # Shielded from cancellation: when the server cancels this connection (it
         # shuts down, or drops the task right after a disconnect), the shell must
-        # still be ended and the terminal slot freed. Without the shield, the first
-        # await here would be cancelled and none of it would happen.
+        # still be ended. Without the shield, the first await here would be
+        # cancelled and none of it would happen.
         with anyio.CancelScope(shield=True):
-            try:
-                code = await run_in_threadpool(bridge.close)
-                exit_code = exit_code if exit_code is not None else code
-                if recorder is not None:
-                    try:
-                        await run_in_threadpool(recorder.flush)
-                    except Exception:
-                        log.exception("Could not store the end of a terminal transcript")
-                if session_row is not None:
-                    transcripts.finish_session(conn, session_row.row_id, reason, exit_code)
-                    audit.record(
-                        conn,
-                        "terminal_close",
-                        "ok",
-                        user_id=user.id,
-                        target_stack=state.stack.name,
-                        target_container=container.name,
-                        session=session_row.public_id,
-                        reason=reason,
-                        exit_code=exit_code,
-                        seconds=round(time.monotonic() - started_at, 1),
-                        recorded_bytes=recorder.total if recorder else 0,
-                    )
-            finally:
-                _release(app, user.session.id)
+            code = await run_in_threadpool(bridge.close)
+            exit_code = exit_code if exit_code is not None else code
+            if recorder is not None:
+                try:
+                    await run_in_threadpool(recorder.flush)
+                except Exception:
+                    log.exception("Could not store the end of a terminal transcript")
+            if session_row is not None:
+                transcripts.finish_session(conn, session_row.row_id, reason, exit_code)
+                audit.record(
+                    conn,
+                    "terminal_close",
+                    "ok",
+                    user_id=user.id,
+                    target_stack=state.stack.name,
+                    target_container=container.name,
+                    session=session_row.public_id,
+                    reason=reason,
+                    exit_code=exit_code,
+                    seconds=round(time.monotonic() - started_at, 1),
+                    recorded_bytes=recorder.total if recorder else 0,
+                )
 
 
 async def _run(
