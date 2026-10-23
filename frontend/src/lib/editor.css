@@ -1,0 +1,103 @@
+/* Inside the compose editor's shadow root only. Colours come from the app theme. */
+
+:host {
+  display: block;
+}
+
+.mount,
+.cm-editor {
+  height: 100%;
+}
+
+.cm-editor {
+  color: var(--text);
+  background: var(--log-bg);
+  font-size: 13px;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-scroller {
+  font-variant-ligatures: none;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+
+.cm-gutters {
+  color: var(--muted);
+  background: var(--log-bg);
+  border-right: 1px solid var(--border);
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: var(--hover);
+}
+
+.cm-cursor {
+  border-left-color: var(--accent);
+}
+
+.cm-selectionBackground,
+.cm-focused .cm-selectionBackground,
+.cm-content ::selection {
+  background: var(--active) !important;
+}
+
+.cm-searchMatch {
+  background: var(--info-bg);
+  outline: 1px solid var(--accent);
+}
+
+.cm-panels {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.cm-panels input,
+.cm-panels button {
+  font: inherit;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.cm-tooltip {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.tok-propertyName,
+.tok-definition {
+  color: var(--src-0);
+}
+
+.tok-string {
+  color: var(--src-2);
+}
+
+.tok-number,
+.tok-bool,
+.tok-atom {
+  color: var(--src-1);
+}
+
+.tok-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok-keyword,
+.tok-meta,
+.tok-punctuation {
+  color: var(--src-4);
+}
+
+.tok-invalid {
+  color: var(--bad);
+}

@@ -1,4 +1,5 @@
-"""Read-only stack views: the stack list, one stack's containers, and live logs."""
+"""Stack views and changes: the stack list, one stack's containers, live logs,
+actions, and the compose editor."""
 
 import asyncio
 import contextlib
@@ -9,11 +10,13 @@ from typing import Any
 import docker.errors
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, WebSocket, status
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
+from app import audit
 from app.auth import sessions
 from app.auth.deps import CurrentUser, client_ip, get_db, require_user, require_user_ws
-from app.stacks import service
+from app.stacks import editor, service
 from app.stacks.actions import ACTIONS, ActionRefused
 from app.stacks.gateway import DockerUnavailable
 from app.stacks.logs import LogFollower, Target, now
@@ -96,6 +99,89 @@ def stack_action(
         detail: dict[str, Any] = {"message": str(e), "job": e.job_id}
         raise HTTPException(e.status, detail) from None
     return job.public()
+
+
+def _edit_error(e: editor.EditRefused) -> HTTPException:
+    return HTTPException(e.status, {"message": str(e), "output": e.output})
+
+
+@router.get("/stacks/{name}/compose")
+def get_compose(name: str, request: Request) -> dict[str, Any]:
+    """The compose file's text. Never the stack's .env, which often holds secrets."""
+    settings = request.app.state.settings
+    try:
+        state = service.get_stack(settings, request.app.state.docker, name)
+        file = editor.read(settings.stacks_dir, state.stack)
+    except service.StackNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such stack") from None
+    except DockerUnavailable as e:
+        raise _unavailable(e) from None
+    except editor.EditRefused as e:
+        raise _edit_error(e) from None
+    return {
+        "file": file.name,
+        "content": file.content,
+        "etag": file.etag,
+        # The app's own stack is shown, never saved: it is changed over SSH.
+        "editable": file.writable and not state.is_self,
+        "writable": file.writable,
+        "self": state.is_self,
+    }
+
+
+class ComposeUpdate(BaseModel):
+    content: str = Field(max_length=editor.MAX_COMPOSE)
+    etag: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.put("/stacks/{name}/compose")
+def put_compose(
+    name: str,
+    body: ComposeUpdate,
+    request: Request,
+    user: CurrentUser = Depends(require_user),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict[str, Any]:
+    settings = request.app.state.settings
+    jobs = request.app.state.jobs
+    ip = client_ip(request)
+    try:
+        state = service.get_stack(settings, request.app.state.docker, name)
+    except service.StackNotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such stack") from None
+    except DockerUnavailable as e:
+        raise _unavailable(e) from None
+    if state.is_self:
+        audit.record(
+            conn, "compose_edit", "denied", user_id=user.id, target_stack=name, reason="own stack"
+        )
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "This is the stack this app runs in. Change it over SSH."
+        )
+    try:
+        with jobs.editing(state.stack.name):
+            saved = editor.save(
+                settings.stacks_dir, state.stack, body.content, body.etag, jobs.runner
+            )
+    except ActionRefused as e:
+        raise HTTPException(e.status, {"message": str(e), "output": [], "job": e.job_id}) from None
+    except editor.EditRefused as e:
+        raise _edit_error(e) from None
+    # Hashes and line counts only: compose files often hold passwords inline.
+    audit.record(
+        conn,
+        "compose_edit",
+        "ok",
+        user_id=user.id,
+        target_stack=state.stack.name,
+        file=state.stack.compose_file,
+        before=saved.old_etag[:12],
+        after=saved.etag[:12],
+        added=saved.added,
+        removed=saved.removed,
+        ip=ip,
+    )
+    return {"etag": saved.etag, "warnings": saved.warnings}
 
 
 @router.get("/jobs/{job_id}")

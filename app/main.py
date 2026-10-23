@@ -4,6 +4,8 @@ Run locally:  uv run python -m app.main
 In Docker:    the image runs the same command.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 import secrets
@@ -12,6 +14,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,9 +25,11 @@ from app.auth.ratelimit import LoginLimiter
 from app.config import Settings
 from app.routes import auth as auth_routes
 from app.routes import stacks as stack_routes
+from app.routes import terminal as terminal_routes
 from app.security_headers import SecurityHeadersMiddleware
 from app.stacks.actions import JobManager
 from app.stacks.gateway import DockerGateway
+from app.terminal import transcripts
 
 log = logging.getLogger("app")
 
@@ -48,8 +53,45 @@ def _announce_setup_token(token: str) -> None:
     )
 
 
+MAINTENANCE_EVERY = 3600  # seconds
+
+
+def _maintenance(settings: Settings) -> None:
+    """Hourly: drop expired sessions and terminal history past its retention time."""
+    conn = db.connect(settings.db_path)
+    try:
+        sessions.purge_expired(conn, settings)
+        transcripts.purge(conn, settings.transcript_retention)
+    finally:
+        conn.close()
+
+
+def _end_leftover_terminals(settings: Settings, gateway: DockerGateway) -> None:
+    conn = db.connect(settings.db_path)
+    try:
+        ended = transcripts.end_leftovers(conn, gateway)
+        if ended:
+            log.warning("Ended %d terminal shell(s) left open by the last run", ended)
+    finally:
+        conn.close()
+
+
+async def _maintenance_loop(settings: Settings) -> None:
+    while True:
+        await asyncio.sleep(MAINTENANCE_EVERY)
+        try:
+            await run_in_threadpool(_maintenance, settings)
+        except Exception:
+            log.exception("Maintenance failed")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    # Read once at startup. A bad key file stops the app with a clear message
+    # instead of silently not recording.
+    transcript_key = (
+        transcripts.load_key(settings.transcript_key_file) if settings.transcript_key_file else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -60,12 +102,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             db.migrate(conn)
             sessions.purge_expired(conn, settings)
+            transcripts.purge(conn, settings.transcript_retention)
             if conn.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None:
                 app.state.setup_token = secrets.token_urlsafe(24)
                 _announce_setup_token(app.state.setup_token)
         finally:
             conn.close()
+        # Docker may be slow or away at startup; this must not delay the app.
+        leftovers = asyncio.create_task(
+            run_in_threadpool(_end_leftover_terminals, settings, app.state.docker)
+        )
+        maintenance = asyncio.create_task(_maintenance_loop(settings))
         yield
+        for task in (leftovers, maintenance):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
 
     app = FastAPI(
         title="docker-project",
@@ -84,6 +136,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.alerter = alerts.from_config(settings.ntfy)
     app.state.docker = DockerGateway()
     app.state.log_sockets = {}
+    app.state.terminal_sockets = {}
+    app.state.transcript_key = transcript_key
     app.state.jobs = JobManager(settings, lambda: app.state.docker)
     app.state.setup_token = None
     app.add_middleware(SecurityHeadersMiddleware)
@@ -105,6 +159,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_routes.protected_router)
     app.include_router(stack_routes.router)
     app.include_router(stack_routes.ws_router)
+    app.include_router(terminal_routes.router)
+    app.include_router(terminal_routes.ws_router)
 
     if settings.static_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="frontend")

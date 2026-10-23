@@ -122,3 +122,29 @@ export function getJob(id, after = 0) {
     background: true,
   });
 }
+
+// Interactive terminal into one container of a stack. Same handshake checks as
+// the log stream; the server also refuses stopped containers and its own stack.
+export function openTerminal(name, container, rows, cols) {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const params = new URLSearchParams({ container, rows: String(rows), cols: String(cols) });
+  return new WebSocket(
+    `${scheme}://${location.host}/ws/stacks/${encodeURIComponent(name)}/terminal?${params}`,
+  );
+}
+
+export function getTerminalSessions() {
+  return request("GET", "/api/terminal-sessions");
+}
+
+export function getTranscript(id) {
+  return request("GET", `/api/terminal-sessions/${encodeURIComponent(id)}/transcript`);
+}
+
+export function getCompose(name) {
+  return request("GET", `/api/stacks/${encodeURIComponent(name)}/compose`);
+}
+
+export function saveCompose(name, content, etag) {
+  return request("PUT", `/api/stacks/${encodeURIComponent(name)}/compose`, { content, etag });
+}

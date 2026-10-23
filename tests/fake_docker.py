@@ -1,13 +1,22 @@
 """A stand-in for DockerGateway, so stack and log tests run without Docker."""
 
+import contextlib
 import queue
+import socket
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 import docker.errors
 
-from app.stacks.gateway import ContainerSummary, DockerUnavailable, _details, _summary
+from app.stacks.gateway import (
+    ContainerSummary,
+    DockerUnavailable,
+    ShellHandle,
+    _details,
+    _summary,
+)
 
 
 def container_attrs(
@@ -115,6 +124,71 @@ class FakeStream:
             yield item
 
 
+class FakeShell:
+    """A tiny shell on the far end of a socket pair, like a container's sh.
+
+    Understands `echo TEXT`, `flood N` (prints N bytes) and `exit N`. Everything
+    received is kept in .received, like a real TTY would see it.
+    """
+
+    def __init__(self, exec_id: str, pid: int, shell: str = "sh", probe: bool = True) -> None:
+        self.exec_id = exec_id
+        self.pid = pid
+        self.app_side, self._side = socket.socketpair()
+        self.received = b""
+        self.exit_code: int | None = None
+        self.ended = threading.Event()
+        self._thread = threading.Thread(target=self._run, args=(shell, probe), daemon=True)
+        self._thread.start()
+
+    def _send(self, data: bytes) -> None:
+        try:
+            self._side.sendall(data)
+        except OSError:
+            self.ended.set()
+
+    def _run(self, shell: str, probe: bool) -> None:
+        if not probe:  # like an image without /bin/sh: an error, then nothing
+            self._send(b'exec: "/bin/sh": stat /bin/sh: no such file or directory\r\n')
+            self._side.close()
+            self.exit_code = 127
+            return
+        self._send(f"\x1e{shell} {self.pid}\x1e$ ".encode())
+        pending = b""
+        while True:
+            try:
+                data = self._side.recv(4096)
+            except OSError:
+                break
+            if not data:
+                break
+            self.received += data
+            pending += data
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                command, _, arg = line.decode().strip().partition(" ")
+                if command == "echo":
+                    self._send(f"{line.decode()}\r\n{arg}\r\n$ ".encode())
+                elif command == "flood":
+                    self._send(b"x" * int(arg) + b"\r\n$ ")
+                elif command == "exit":
+                    self.exit_code = int(arg or 0)
+                    self._side.close()
+                    self.ended.set()
+                    return
+                else:
+                    self._send(b"$ ")
+        self.ended.set()
+
+    def kill(self) -> None:
+        if self.exit_code is None:
+            self.exit_code = 129  # hangup
+        with contextlib.suppress(OSError):
+            self._side.shutdown(socket.SHUT_RDWR)
+        self._side.close()
+        self.ended.set()
+
+
 @dataclass
 class FakeGateway:
     containers: list[dict[str, Any]] = field(default_factory=list)
@@ -124,6 +198,10 @@ class FakeGateway:
     streams: dict[str, list[FakeStream]] = field(default_factory=dict)
     images: dict[str, str] = field(default_factory=dict)  # tag -> image id
     removed: list[str] = field(default_factory=list)
+    shells: list[FakeShell] = field(default_factory=list)
+    resizes: list[tuple[str, int, int]] = field(default_factory=list)
+    ended_sessions: list[tuple[str, int]] = field(default_factory=list)
+    has_shell: bool = True
 
     def _check(self) -> None:
         if not self.available:
@@ -187,3 +265,32 @@ class FakeGateway:
             return False
         self.removed.append(image_id)
         return True
+
+    # ------------------------------------------------------------ terminal
+
+    def open_shell(self, container_id: str) -> ShellHandle:
+        self._check()
+        shell = FakeShell(
+            f"exec{len(self.shells)}", pid=40 + len(self.shells), probe=self.has_shell
+        )
+        self.shells.append(shell)
+        return ShellHandle(exec_id=shell.exec_id, sock=shell.app_side)
+
+    def resize_shell(self, exec_id: str, rows: int, cols: int) -> None:
+        self.resizes.append((exec_id, rows, cols))
+
+    def _shell(self, exec_id: str) -> FakeShell:
+        for shell in self.shells:
+            if shell.exec_id == exec_id:
+                return shell
+        raise docker.errors.NotFound("no such exec")
+
+    def shell_exit_code(self, exec_id: str) -> int | None:
+        shell = self._shell(exec_id)
+        return shell.exit_code if shell.ended.is_set() else None
+
+    def end_shell_session(self, container_id: str, pid: int) -> None:
+        self.ended_sessions.append((container_id, pid))
+        for shell in self.shells:
+            if shell.pid == pid:
+                shell.kill()

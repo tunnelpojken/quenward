@@ -88,6 +88,16 @@ def _ntfy() -> NtfyConfig | None:
     return NtfyConfig(url=url, topic=values["NTFY_TOPIC"], token_file=token_file)
 
 
+def _optional_file(name: str) -> Path | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    path = _abs_path(name, raw)
+    if not path.is_file():
+        raise ConfigError(f"{name} {str(path)!r} does not exist or is not a file")
+    return path
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -100,6 +110,11 @@ class Settings:
     reset_link_lifetime: timedelta = timedelta(minutes=15)
     ws_session_check: timedelta = timedelta(seconds=5)
     ntfy: NtfyConfig | None = None
+    # Terminal: closed after this long without a keystroke. Transcripts are only
+    # recorded when a key file is configured, and deleted after the retention time.
+    terminal_idle: timedelta = timedelta(minutes=15)
+    transcript_key_file: Path | None = None
+    transcript_retention: timedelta = timedelta(days=14)
 
     @property
     def db_path(self) -> Path:
@@ -120,4 +135,5 @@ class Settings:
             port=port,
             allowed_origins=_origins("ALLOWED_ORIGINS", port),
             ntfy=_ntfy(),
+            transcript_key_file=_optional_file("TRANSCRIPT_KEY_FILE"),
         )

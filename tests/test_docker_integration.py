@@ -372,3 +372,98 @@ def test_real_updates_never_delete_another_stacks_image(
             cwd=folder,
             capture_output=True,
         )
+
+
+# ---------------------------------------------------------------- Phase 5: terminal
+
+
+def _processes(container) -> list[dict[str, str]]:
+    """The container's processes as seen from the host: pid, session, state, command."""
+    container.reload()
+    top = container.top(ps_args="-o pid,sid,stat,args")
+    return [dict(zip(("pid", "sid", "stat", "args"), p, strict=False)) for p in top["Processes"]]
+
+
+def test_real_terminal_runs_commands_and_closing_ends_everything(
+    client: TestClient, csrf: str, stack
+) -> None:
+    from tests.test_terminal import Term
+
+    web = stack["containers"]["web"]
+    before = {p["pid"] for p in _processes(web)}
+    with _ws(client, f"/ws/stacks/itest/terminal?container={web.id[:12]}&rows=30&cols=100") as ws:
+        t = Term(ws)
+        t.read_until(b"# ")
+        assert t.control[0]["type"] == "ready"
+        assert t.control[0]["shell"] == "sh"  # busybox has no bash: the fallback
+        assert b"\x1e" not in t.output
+        # Evaluated by the shell, not just echoed back: 40+2 must become 42.
+        t.type("echo result-$((40+2))\n")
+        t.read_until(b"result-42")
+        t.type("stty size\n")
+        t.read_until(b"30 100")
+        # Things started from the shell, including one that ignores a hangup.
+        t.type("sleep 901 & (trap '' HUP; sleep 902) &\n")
+        t.type("echo started\n")
+        t.read_until(b"started\r\n")
+        during = _processes(web)
+        # The terminal's shell is a new session leader (pid == session id); everything
+        # it started shares that session. The container's own processes do not.
+        leaders = {p["sid"] for p in during if p["pid"] == p["sid"] and p["pid"] not in before}
+        assert len(leaders) == 1, during
+        session = leaders.pop()
+        assert len([p for p in during if p["sid"] == session]) >= 3, during
+
+    def leftovers() -> list[dict[str, str]]:
+        return [p for p in _processes(web) if p["sid"] == session and not p["stat"].startswith("Z")]
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and leftovers():
+        time.sleep(0.2)
+    assert not leftovers(), f"outlived the terminal: {leftovers()} (all: {_processes(web)})"
+
+
+def test_real_terminal_exit_reports_the_code(client: TestClient, csrf: str, stack) -> None:
+    from tests.test_terminal import Term
+
+    worker = stack["containers"]["worker"]
+    with _ws(client, f"/ws/stacks/itest/terminal?container={worker.name}") as ws:
+        t = Term(ws)
+        t.read_until(b"# ")
+        t.type("exit 7\n")
+        assert t.wait_closed() == 4410
+        assert {"type": "exit", "code": 7} in t.control
+
+
+# ---------------------------------------------------------------- Phase 5: compose editor
+
+
+def test_real_compose_validates_edits(client: TestClient, csrf: str, settings: Settings) -> None:
+    folder = settings.stacks_dir / "edited"
+    folder.mkdir(parents=True)
+    original = "services:\n  web:\n    image: ${IMAGE}\n"
+    (folder / "compose.yaml").write_text(original)
+    (folder / ".env").write_text("IMAGE=busybox:1.37\n")  # used for ${IMAGE}, never shown
+
+    def put(content: str, etag: str):
+        return client.put(
+            "/api/stacks/edited/compose",
+            json={"content": content, "etag": etag},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    etag = client.get("/api/stacks/edited/compose").json()["etag"]
+    # A property compose does not know: refused with compose's own message.
+    bad = original + "    not_a_compose_key: 1\n"
+    response = put(bad, etag)
+    assert response.status_code == 422, response.text
+    output = " ".join(response.json()["detail"]["output"])
+    assert "not_a_compose_key" in output
+    assert ".check-" not in output
+    # A variable from the stack's .env resolves, so the check ran in its folder.
+    good = original + "    command: ['sleep', '60']\n"
+    response = put(good, etag)
+    assert response.status_code == 200, response.text
+    assert (folder / "compose.yaml").read_text() == good
+    assert (folder / "compose.yaml.bak").read_text() == original
+    assert [p.name for p in folder.iterdir() if ".check-" in p.name] == []

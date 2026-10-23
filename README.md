@@ -4,8 +4,9 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 4 (stack actions).** Stacks, live logs, and start / stop / restart /
-update. Do not expose it to any network.
+**Status: Phase 5 (terminal and compose editor).** Stacks, live logs, start / stop /
+restart / update, an interactive terminal into containers, and editing compose
+files. Do not expose it to any network.
 
 ## Requirements
 
@@ -115,6 +116,90 @@ report that the previous image could not be kept.
 `DOCKER_CONFIG` at it, for example `~/.docker:/run/docker-config:ro` and
 `DOCKER_CONFIG=/run/docker-config`.
 
+## Terminal
+
+**Terminal** on a running container opens a shell inside it (`docker exec`):
+bash if the image has it, otherwise sh. Never a shell on the host. It is the most
+powerful thing in the app, so:
+
+- **Only running containers of a stack**, never the app's own stack.
+- **At most 2 terminals per login, 4 in total.**
+- **Closed after 15 minutes without typing.** Typing counts as activity for the
+  login session; an open terminal nobody types in does not keep you logged in.
+- **Closing the terminal ends the shell and everything started from it.** Docker
+  itself leaves an exec running when the connection drops, so the app ends the
+  shell's whole session (hangup, then kill a second later), background jobs and
+  `nohup` included. Processes that detach themselves completely (daemons calling
+  `setsid`) are left alone, as with `docker exec`. Shells left open when the app
+  stopped are ended at its next start.
+- **Opening and closing are in the audit log**, never what was typed.
+
+### Transcripts (optional, off by default)
+
+With a key, every terminal session is recorded (everything typed and shown,
+including what the screen hides, such as a password typed at a prompt) and kept
+for 14 days under **Terminal history**. Viewing one is audited.
+
+Transcripts are encrypted (AES-256-GCM) with a key that lives in a file, never in
+the database: a copy of the database alone reveals nothing of what was typed.
+Create the key once on the server:
+
+```bash
+mkdir -p secrets
+openssl rand -base64 32 > secrets/transcript.key
+sudo chown 10001 secrets/transcript.key && sudo chmod 400 secrets/transcript.key
+```
+
+```yaml
+    environment:
+      TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
+    volumes:
+      - ./secrets/transcript.key:/run/secrets/transcript.key:ro
+```
+
+**Back up the key and the database separately**, never in the same place (for
+example: the database with the server's normal backups, the key in a password
+manager). Without the key, old transcripts cannot be read by anyone; with both
+together, they can. Changing the key makes older transcripts unreadable.
+
+## Compose editor
+
+Click a stack's compose file name to view and edit it. Saving:
+
+1. **Refuses if the file changed on disk** since you opened it (an edit over SSH
+   is never overwritten), and while an action runs on the stack.
+2. **Checks the YAML**, then runs **`docker compose config`** on the new text in
+   the stack's own folder, so relative paths and the stack's `.env` resolve
+   exactly as they will on start. Compose's own error message is shown.
+3. **Keeps the previous version as `compose.yaml.bak`** (one generation), then
+   writes the file **in place**, so it keeps its owner and permissions.
+
+Saving does not touch running containers: **Apply** (`docker compose up -d`)
+recreates the services that changed. `.env` files are never shown or edited, and
+the audit log records hashes and line counts, never the content (compose files
+often hold passwords). The app's own stack is shown read-only.
+
+**Allowing the app to write.** The app runs as user 10001, and your compose files
+belong to you. Give it write access to the stack folders and compose files only,
+not to everything inside (stack data stays out of reach), with an ACL:
+
+```bash
+sudo apt install acl   # if setfacl is missing
+cd /home/fested/docker
+for d in */; do
+  sudo setfacl -m u:10001:rwx "$d"                 # to create the .bak and a check file
+  for f in "$d"compose.yaml "$d"compose.yml "$d"docker-compose.yaml "$d"docker-compose.yml; do
+    [ -f "$f" ] && sudo setfacl -m u:10001:rw "$f"
+  done
+done
+```
+
+Run it again after adding a stack. Without write access the editor shows the file
+read-only. Some editors replace a file when saving (a new file without the ACL);
+if a stack turns read-only after an SSH edit, run the loop again.
+
+The stacks folder must be mounted without `:ro` for this.
+
 ## Checks (the same ones CI runs)
 
 ```bash
@@ -149,6 +234,7 @@ DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
 | `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |
 | `NTFY_TOPIC` | (off)           | Topic for the alerts. Use its own topic, not the one Diun uses |
 | `NTFY_TOKEN_FILE` | (off)      | Path to a file holding the ntfy access token |
+| `TRANSCRIPT_KEY_FILE` | (off)  | Key file for encrypted terminal transcripts, see [Terminal](#terminal) |
 
 All paths must be absolute. The three `NTFY_` settings go together: set all of them
 or none.
