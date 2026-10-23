@@ -37,7 +37,9 @@ async function request(method, path, body, { retry = true, background = false } 
 
   // After a server restart the CSRF token changes; fetch a fresh one and retry once.
   if (response.status === 403 && retry && method !== "GET" && csrfToken) {
-    if (await getSession()) return request(method, path, body, { retry: false, background });
+    if (await getSession({ background: true })) {
+      return request(method, path, body, { retry: false, background });
+    }
   }
 
   let data = null;
@@ -54,9 +56,11 @@ async function request(method, path, body, { retry = true, background = false } 
   return data;
 }
 
-export async function getSession() {
+// background: a check that must not count as activity (switching to the tab, or
+// fetching a fresh CSRF token before retrying a request that does count).
+export async function getSession({ background = false } = {}) {
   try {
-    const session = await request("GET", "/api/session");
+    const session = await request("GET", "/api/session", undefined, { background });
     csrfToken = session.csrf_token;
     return session;
   } catch (error) {

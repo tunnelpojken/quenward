@@ -51,7 +51,11 @@
   async function onVisible() {
     if (document.visibilityState !== "visible" || view !== "home") return;
     try {
-      if (!(await getSession())) showLogin("Your session expired. Please log in again.");
+      // Only a check: looking at the tab is not using the app, so this must not
+      // keep the session alive (it would reset the 30-minute idle timer).
+      if (!(await getSession({ background: true }))) {
+        showLogin("Your session expired. Please log in again.");
+      }
     } catch {
       // Network hiccup: keep the current view; the next action will tell.
     }

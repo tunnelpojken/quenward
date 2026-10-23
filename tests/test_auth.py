@@ -353,3 +353,16 @@ def test_audit_refuses_secret_fields(settings: Settings) -> None:
 
 def test_api_responses_are_not_cached(client: TestClient) -> None:
     assert client.get("/api/setup/status").headers["cache-control"] == "no-store"
+
+
+def test_tab_switch_session_checks_do_not_keep_a_session_alive(
+    client: TestClient, csrf: str, fake_clock: FakeClock
+) -> None:
+    """Coming back to the tab asks whether the session is still valid. That check
+    must not count as activity, or glancing at the tab would keep it alive forever."""
+    background = {"X-Background-Request": "1"}
+    for _ in range(3):
+        fake_clock.advance(minutes=9)
+        assert client.get("/api/session", headers=background).status_code == 200
+    fake_clock.advance(minutes=4)  # 31 minutes since the last real activity
+    assert client.get("/api/session", headers=background).status_code == 401
