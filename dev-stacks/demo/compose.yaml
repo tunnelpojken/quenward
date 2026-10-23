@@ -1,0 +1,20 @@
+# Two chatty services and one with a healthcheck, for trying the dashboard.
+# Start with:  docker compose up -d   (from this folder)
+services:
+  web:
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - "trap 'exit 0' TERM; i=0; while true; do i=$$((i+1)); echo \"GET /page/$$i 200\"; sleep 2; done"
+    ports:
+      - "127.0.0.1:8099:8099"
+  worker:
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - "trap 'exit 0' TERM; i=0; while true; do i=$$((i+1)); echo \"job $$i done\"; [ $$((i % 3)) -eq 0 ] && echo \"job $$i was slow\" >&2; sleep 3; done"
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s

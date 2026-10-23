@@ -2,7 +2,7 @@
   import Card from "./lib/Card.svelte";
   import Notice from "./lib/Notice.svelte";
   import { getSession, setupStatus } from "./lib/api.js";
-  import Home from "./views/Home.svelte";
+  import Dashboard from "./views/Dashboard.svelte";
   import Login from "./views/Login.svelte";
   import Reset from "./views/Reset.svelte";
   import Setup from "./views/Setup.svelte";
@@ -81,7 +81,11 @@
 {:else if view === "reset"}
   <Reset token={resetToken} onDone={(username) => showLogin("Password changed. Log in with the new one.", username)} />
 {:else if view === "home"}
-  <Home {session} onLoggedOut={() => showLogin("You have been logged out.")} />
+  <Dashboard
+    {session}
+    onLoggedOut={() => showLogin("You have been logged out.")}
+    onExpired={() => showLogin("Your session expired. Please log in again.")}
+  />
 {:else}
   <Card title="Something is wrong">
     <Notice message={fatal} />

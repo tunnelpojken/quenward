@@ -1,0 +1,5 @@
+# Prints a few lines and exits, so the dashboard has a stopped stack to show.
+services:
+  migrate:
+    image: busybox:1.37
+    command: ["sh", "-c", "echo starting; sleep 3; echo done; exit 0"]

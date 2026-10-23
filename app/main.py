@@ -21,7 +21,9 @@ from app.auth import sessions
 from app.auth.ratelimit import LoginLimiter
 from app.config import Settings
 from app.routes import auth as auth_routes
+from app.routes import stacks as stack_routes
 from app.security_headers import SecurityHeadersMiddleware
+from app.stacks.gateway import DockerGateway
 
 log = logging.getLogger("app")
 
@@ -79,6 +81,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.csrf_secret = secrets.token_bytes(32)
     app.state.limiter = LoginLimiter()
     app.state.alerter = alerts.from_config(settings.ntfy)
+    app.state.docker = DockerGateway()
+    app.state.log_sockets = {}
     app.state.setup_token = None
     app.add_middleware(SecurityHeadersMiddleware)
 
@@ -97,6 +101,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # API routers go BEFORE the static mount, so /api/... is never shadowed.
     app.include_router(auth_routes.public_router)
     app.include_router(auth_routes.protected_router)
+    app.include_router(stack_routes.router)
+    app.include_router(stack_routes.ws_router)
 
     if settings.static_dir.is_dir():
         app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="frontend")

@@ -5,7 +5,9 @@ description = "Self-hosted web UI for managing Docker Compose stacks"
 requires-python = ">=3.13"
 dependencies = [
     "argon2-cffi>=25.1.0",
+    "docker>=7.2.0",
     "fastapi>=0.161.0",
+    "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -45,8 +47,8 @@ select = [
 extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.ruff.lint.per-file-ignores]
-# assert is how pytest works; test passwords are fake by design
-"tests/**" = ["S101", "S105", "S106"]
+# assert is how pytest works; test passwords and addresses are fake by design
+"tests/**" = ["S101", "S104", "S105", "S106"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]

@@ -63,8 +63,14 @@ def create(
     return token
 
 
-def validate(conn: sqlite3.Connection, token: str | None, settings: Settings) -> Session | None:
-    """Return the session for a cookie token, or None. Expired sessions are deleted."""
+def validate(
+    conn: sqlite3.Connection, token: str | None, settings: Settings, *, touch: bool = True
+) -> Session | None:
+    """Return the session for a cookie token, or None. Expired sessions are deleted.
+
+    touch=False checks the session without counting it as user activity, so
+    automatic refreshes and open log streams do not keep an idle session alive.
+    """
     if not token or len(token) > _MAX_TOKEN_LENGTH:
         return None
     token_hash = hash_token(token)
@@ -83,9 +89,10 @@ def validate(conn: sqlite3.Connection, token: str | None, settings: Settings) ->
         conn.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
         return None
 
-    conn.execute(
-        "UPDATE sessions SET last_seen_at = ? WHERE id = ?", (clock.to_iso(now), row["id"])
-    )
+    if touch:
+        conn.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE id = ?", (clock.to_iso(now), row["id"])
+        )
     return Session(
         id=row["id"], user_id=row["user_id"], username=row["username"], token_hash=token_hash
     )

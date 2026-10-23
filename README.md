@@ -4,8 +4,8 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 2 (authentication).** No Docker access yet.
-Do not expose it to any network.
+**Status: Phase 3 (read-only Docker access).** Stacks, containers and live logs;
+no actions yet. Do not expose it to any network.
 
 ## Requirements
 
@@ -36,11 +36,50 @@ npm run dev                              # -> http://127.0.0.1:5173
 To have the backend serve the built frontend instead, run `npm run build` once;
 the app picks up `frontend/dist` automatically.
 
-Everything in a container:
+Everything in a container (it needs your Docker socket's group id once):
 
 ```bash
-docker compose -f compose.dev.yaml up --build
+echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
+docker compose -f compose.dev.yaml up --build -d
 # -> http://127.0.0.1:5005
+```
+
+The dev container shows the sample stacks in `dev-stacks/`. Start some to see
+them in the dashboard:
+
+```bash
+(cd dev-stacks/demo && docker compose up -d)
+(cd dev-stacks/oneshot && docker compose up -d)
+```
+
+## Docker access
+
+**Access to the Docker socket is root access to the host.** Anyone who can use
+this app can, in later phases, start containers that read any file on the
+machine. That is why login comes first, why the app is meant for LAN / VPN use
+only, and why it runs as an unprivileged user that reaches the socket only
+through the socket's group (`group_add` with `DOCKER_GID`).
+
+**Mount the stacks folder at the same path as on the host**, for example
+`/home/fested/docker:/home/fested/docker`. Compose records on every container
+the folder it was started from, and that is how containers are matched to their
+stack. A project with the same name started from another folder is a different
+stack; the dashboard shows a hint when it finds one. Folders and compose files
+that are symlinks are ignored.
+
+**What the browser never receives:** environment variables, labels, commands,
+entrypoints, healthcheck commands and their output. Container details are built
+from an explicit list of safe fields. Log lines are shown as plain text.
+
+### Trying it on festedlab before HTTPS exists
+
+The session cookie is `Secure`, so browsers only send it over HTTPS or to
+`localhost`. Until Caddy is set up, keep the port bound to `127.0.0.1` on the
+server and use an SSH tunnel:
+
+```bash
+ssh -L 5005:127.0.0.1:5005 fested@192.168.0.37
+# then open http://127.0.0.1:5005 on your own machine
 ```
 
 ## Checks (the same ones CI runs)
@@ -55,6 +94,13 @@ uv run pytest
 cd frontend && npm audit --audit-level=high && npm run build
 ```
 
+Tests against a real Docker daemon are opt-in. They create a few throw-away
+containers (busybox) and remove them afterwards:
+
+```bash
+DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
+```
+
 ## Configuration
 
 | Variable     | Default         | Meaning                               |
@@ -64,7 +110,7 @@ cd frontend && npm audit --audit-level=high && npm run build
 | `STATIC_DIR` | `frontend/dist` | Built frontend                        |
 | `PORT`       | `5005`          | Listening port inside the container   |
 | `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
-
+| `DOCKER_HOST` | the local socket | Where Docker is, e.g. a socket proxy (`tcp://socket-proxy:2375`) |
 | `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |
 | `NTFY_TOPIC` | (off)           | Topic for the alerts. Use its own topic, not the one Diun uses |
 | `NTFY_TOKEN_FILE` | (off)      | Path to a file holding the ntfy access token |

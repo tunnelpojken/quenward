@@ -17,10 +17,13 @@ function messageFrom(status, data) {
   return `Something went wrong (HTTP ${status}).`;
 }
 
-async function request(method, path, body, retry = true) {
+// Automatic refreshes are marked so the server does not count them as activity:
+// an open dashboard must not keep an idle session alive forever.
+async function request(method, path, body, { retry = true, background = false } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  if (background) headers["X-Background-Request"] = "1";
 
   const response = await fetch(path, {
     method,
@@ -32,7 +35,7 @@ async function request(method, path, body, retry = true) {
 
   // After a server restart the CSRF token changes; fetch a fresh one and retry once.
   if (response.status === 403 && retry && method !== "GET" && csrfToken) {
-    if (await getSession()) return request(method, path, body, false);
+    if (await getSession()) return request(method, path, body, { retry: false, background });
   }
 
   let data = null;
@@ -85,4 +88,23 @@ export async function logout() {
 
 export function resetPassword(token, password) {
   return request("POST", "/api/password-reset", { token, password });
+}
+
+export function getStacks({ background = false } = {}) {
+  return request("GET", "/api/stacks", undefined, { background });
+}
+
+export function getStack(name, { background = false } = {}) {
+  return request("GET", `/api/stacks/${encodeURIComponent(name)}`, undefined, { background });
+}
+
+// Live logs. The browser sends the session cookie with the WebSocket handshake;
+// the server checks it and the page's origin before accepting.
+export function openLogs(name, { tail = 200, container = null } = {}) {
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  const params = new URLSearchParams({ tail: String(tail) });
+  if (container) params.set("container", container);
+  return new WebSocket(
+    `${scheme}://${location.host}/ws/stacks/${encodeURIComponent(name)}/logs?${params}`,
+  );
 }

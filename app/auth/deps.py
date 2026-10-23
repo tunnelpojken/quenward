@@ -10,7 +10,8 @@ import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException, status
+from starlette.requests import HTTPConnection
 
 from app import db
 from app.auth import sessions
@@ -25,8 +26,9 @@ class CurrentUser:
     session: sessions.Session
 
 
-def get_db(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = db.connect(request.app.state.settings.db_path)
+def get_db(connection: HTTPConnection) -> Iterator[sqlite3.Connection]:
+    """One database connection per request or WebSocket (HTTPConnection covers both)."""
+    conn = db.connect(connection.app.state.settings.db_path)
     try:
         yield conn
     finally:
@@ -54,10 +56,20 @@ def check_origin(request: Request) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Request origin not allowed")
 
 
+BACKGROUND_HEADER = "x-background-request"
+
+
 def require_user(request: Request, conn: sqlite3.Connection = Depends(get_db)) -> CurrentUser:
     check_origin(request)
+    # Automatic refreshes send this header so they do not count as activity: an open
+    # dashboard must not keep an idle session alive forever. Setting it can only make
+    # a session expire sooner, so it needs no protection.
+    background = request.headers.get(BACKGROUND_HEADER) == "1"
     session = sessions.validate(
-        conn, request.cookies.get(sessions.COOKIE_NAME), request.app.state.settings
+        conn,
+        request.cookies.get(sessions.COOKIE_NAME),
+        request.app.state.settings,
+        touch=not background,
     )
     if session is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
@@ -66,4 +78,25 @@ def require_user(request: Request, conn: sqlite3.Connection = Depends(get_db)) -
         sent = request.headers.get("x-csrf-token", "")
         if not hmac.compare_digest(sent.encode(), expected.encode()):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing or invalid CSRF token")
+    return CurrentUser(id=session.user_id, username=session.username, session=session)
+
+
+def require_user_ws(
+    websocket: WebSocket, conn: sqlite3.Connection = Depends(get_db)
+) -> CurrentUser:
+    """Authentication for WebSockets, checked during the handshake.
+
+    Browsers do not apply the same-origin policy to WebSockets, so the Origin
+    check here is what stops another website from opening a socket with the
+    user's cookie (cross-site WebSocket hijacking). Failing either check
+    rejects the handshake before any data is sent.
+    """
+    origin = websocket.headers.get("origin")
+    if origin is None or origin.rstrip("/") not in websocket.app.state.settings.allowed_origins:
+        raise WebSocketException(status.WS_1008_POLICY_VIOLATION, "Origin not allowed")
+    session = sessions.validate(
+        conn, websocket.cookies.get(sessions.COOKIE_NAME), websocket.app.state.settings
+    )
+    if session is None:
+        raise WebSocketException(status.WS_1008_POLICY_VIOLATION, "Not authenticated")
     return CurrentUser(id=session.user_id, username=session.username, session=session)
