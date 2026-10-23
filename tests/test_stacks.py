@@ -434,3 +434,15 @@ def test_history_is_capped_across_containers(
             received += message["lines"]
     assert len(received) == logs.MAX_HISTORY
     assert received[-1]["m"] == "line 1499"  # the newest lines are kept
+
+
+def test_stopped_containers_report_no_health(
+    client: TestClient, csrf: str, fake: FakeGateway, stacks_dir
+) -> None:
+    """Docker keeps the last health status after a stop; it must not show as unhealthy."""
+    fake.containers[1] = container_attrs(
+        UNBOUND_ID, "unbound", "pihole", str(stacks_dir / "pihole"), "exited", "Exited (0)"
+    )
+    containers = {c["service"]: c for c in client.get("/api/stacks/pihole").json()["containers"]}
+    assert containers["pihole"]["health"] == "healthy"
+    assert containers["unbound"]["health"] is None

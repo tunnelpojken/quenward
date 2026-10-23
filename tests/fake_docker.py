@@ -52,6 +52,7 @@ def inspect_attrs(summary: dict[str, Any]) -> dict[str, Any]:
         "Path": "/entrypoint.sh",
         "State": {
             "Status": summary["State"],
+            "Running": summary["State"] == "running",
             "ExitCode": 0,
             "OOMKilled": False,
             "StartedAt": "2026-10-23T06:00:01Z",

@@ -128,7 +128,9 @@ def _details(attrs: dict[str, Any]) -> dict[str, Any]:
         "image": _str(config.get("Image"), 256),
         "image_id": _str(attrs.get("Image")).removeprefix("sha256:")[:12],
         "state": _str(state.get("Status"), 32),
-        "health": (state.get("Health") or {}).get("Status"),  # status word only, never the log
+        # The status word only, never the health log. Only while running: Docker
+        # keeps the last status on a stopped container, where it means nothing.
+        "health": (state.get("Health") or {}).get("Status") if state.get("Running") else None,
         "exit_code": state.get("ExitCode"),
         "oom_killed": bool(state.get("OOMKilled")),
         "started_at": _str(state.get("StartedAt"), 64),
