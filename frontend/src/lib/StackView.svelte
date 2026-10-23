@@ -1,5 +1,6 @@
 <script>
   import ActionBar from "./ActionBar.svelte";
+  import ComposeEditor from "./ComposeEditor.svelte";
   import JobPanel from "./JobPanel.svelte";
   import LogViewer from "./LogViewer.svelte";
   import TerminalPanel from "./TerminalPanel.svelte";
@@ -20,6 +21,7 @@
 
   // The container a terminal is open for (one per stack view).
   let terminalFor = $state(null);
+  let editing = $state(false);
 
   function started(id) {
     jobId = id;
@@ -70,7 +72,13 @@
     <h1>{detail.name}</h1>
     <span class="badge {detail.status}">{STATUS_LABEL[detail.status]}</span>
     {#if detail.unhealthy}<span class="badge bad">Unhealthy</span>{/if}
-    <span class="muted file">{detail.compose_file}</span>
+    <button
+      type="button"
+      class="secondary small file-button"
+      aria-pressed={editing}
+      onclick={() => (editing = true)}
+      title={detail.self ? "View the compose file" : "View and edit the compose file"}
+    >{detail.compose_file}</button>
   </header>
 
   <ActionBar {detail} busy={jobRunning || !!detail.job} onStarted={started} {onExpired} />
@@ -131,6 +139,10 @@
       <p class="muted">No containers. This stack has not been started.</p>
     {/each}
   </section>
+
+  {#if editing}
+    <ComposeEditor {detail} {onExpired} onStarted={started} onClose={() => (editing = false)} />
+  {/if}
 
   {#if terminalFor}
     {#key terminalFor.id}

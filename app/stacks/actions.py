@@ -8,11 +8,12 @@
   rollback tag (an untagged image may be deleted by Docker at any moment).
 """
 
+import contextlib
 import logging
 import secrets
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -110,6 +111,7 @@ class JobManager:
         self.max_running = max_running
         self._jobs: dict[str, Job] = {}
         self._running: dict[str, str] = {}  # stack name -> job id
+        self._editing: set[str] = set()  # stacks whose compose file is being saved
         self._lock = threading.Lock()
 
     @property
@@ -141,6 +143,8 @@ class JobManager:
                 raise ActionRefused(
                     "Another action is already running on this stack.", 409, self._running[name]
                 )
+            if name in self._editing:
+                raise ActionRefused("The compose file is being saved. Try again in a moment.", 409)
             if len(self._running) >= self.max_running:
                 raise ActionRefused(
                     "Other actions are running. Try again when they have finished.", 429
@@ -159,6 +163,26 @@ class JobManager:
             target=self._run, args=(job, state), name=f"action-{name}", daemon=True
         ).start()
         return job
+
+    @contextlib.contextmanager
+    def editing(self, stack: str) -> Iterator[None]:
+        """Hold the stack while its compose file is saved: no action may start,
+        and no save happens while an action (which reads the file) runs."""
+        with self._lock:
+            if stack in self._running:
+                raise ActionRefused(
+                    "An action is running on this stack. Save when it has finished.",
+                    409,
+                    self._running[stack],
+                )
+            if stack in self._editing:
+                raise ActionRefused("The compose file is already being saved.", 409)
+            self._editing.add(stack)
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._editing.discard(stack)
 
     # ------------------------------------------------------------ internals
 

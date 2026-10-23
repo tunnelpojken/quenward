@@ -425,3 +425,37 @@ def test_real_terminal_exit_reports_the_code(client: TestClient, csrf: str, stac
         t.type("exit 7\n")
         assert t.wait_closed() == 4410
         assert {"type": "exit", "code": 7} in t.control
+
+
+# ---------------------------------------------------------------- Phase 5: compose editor
+
+
+def test_real_compose_validates_edits(client: TestClient, csrf: str, settings: Settings) -> None:
+    folder = settings.stacks_dir / "edited"
+    folder.mkdir(parents=True)
+    original = "services:\n  web:\n    image: ${IMAGE}\n"
+    (folder / "compose.yaml").write_text(original)
+    (folder / ".env").write_text("IMAGE=busybox:1.37\n")  # used for ${IMAGE}, never shown
+
+    def put(content: str, etag: str):
+        return client.put(
+            "/api/stacks/edited/compose",
+            json={"content": content, "etag": etag},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    etag = client.get("/api/stacks/edited/compose").json()["etag"]
+    # A property compose does not know: refused with compose's own message.
+    bad = original + "    not_a_compose_key: 1\n"
+    response = put(bad, etag)
+    assert response.status_code == 422, response.text
+    output = " ".join(response.json()["detail"]["output"])
+    assert "not_a_compose_key" in output
+    assert ".check-" not in output
+    # A variable from the stack's .env resolves, so the check ran in its folder.
+    good = original + "    command: ['sleep', '60']\n"
+    response = put(good, etag)
+    assert response.status_code == 200, response.text
+    assert (folder / "compose.yaml").read_text() == good
+    assert (folder / "compose.yaml.bak").read_text() == original
+    assert [p.name for p in folder.iterdir() if ".check-" in p.name] == []

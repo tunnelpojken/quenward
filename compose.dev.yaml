@@ -30,8 +30,9 @@ services:
     volumes:
       - data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      # Read-only until Phase 5 (the compose editor) needs to write.
-      - ${PWD}/dev-stacks:${PWD}/dev-stacks:ro
+      # Writable for the compose editor. The app (user 10001) still needs write
+      # permission on each stack folder and compose file: see the README.
+      - ${PWD}/dev-stacks:${PWD}/dev-stacks
       # - ./secrets/transcript.key:/run/secrets/transcript.key:ro
     # Hardening: read-only filesystem, no Linux capabilities, no privilege escalation.
     read_only: true

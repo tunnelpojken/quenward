@@ -140,3 +140,11 @@ export function getTerminalSessions() {
 export function getTranscript(id) {
   return request("GET", `/api/terminal-sessions/${encodeURIComponent(id)}/transcript`);
 }
+
+export function getCompose(name) {
+  return request("GET", `/api/stacks/${encodeURIComponent(name)}/compose`);
+}
+
+export function saveCompose(name, content, etag) {
+  return request("PUT", `/api/stacks/${encodeURIComponent(name)}/compose`, { content, etag });
+}

@@ -988,3 +988,52 @@ button.danger:not(.secondary) {
     gap: 2px;
   }
 }
+
+/* ------------------------------------------------------------ compose editor (Phase 5) */
+
+.file-button {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-weight: 400;
+}
+
+.file-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.editor {
+  margin-bottom: 20px;
+}
+
+.editor > .notice,
+.editor > .confirm {
+  margin-bottom: 8px;
+}
+
+.confirm.saved {
+  border-left-color: var(--ok);
+}
+
+.editor-box {
+  height: max(360px, 60vh);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.edit-problem p {
+  margin: 0;
+}
+
+.edit-problem pre {
+  margin: 8px 0 0;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.edit-problem button {
+  margin-top: 8px;
+}

@@ -24,3 +24,6 @@ data/
 .vscode/
 *.swp
 .DS_Store
+
+# Backups the compose editor keeps next to the dev stacks
+dev-stacks/**/*.bak

@@ -4,8 +4,9 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 5 (terminal).** Stacks, live logs, start / stop / restart / update,
-and an interactive terminal into containers. Do not expose it to any network.
+**Status: Phase 5 (terminal and compose editor).** Stacks, live logs, start / stop /
+restart / update, an interactive terminal into containers, and editing compose
+files. Do not expose it to any network.
 
 ## Requirements
 
@@ -160,6 +161,44 @@ sudo chown 10001 secrets/transcript.key && sudo chmod 400 secrets/transcript.key
 example: the database with the server's normal backups, the key in a password
 manager). Without the key, old transcripts cannot be read by anyone; with both
 together, they can. Changing the key makes older transcripts unreadable.
+
+## Compose editor
+
+Click a stack's compose file name to view and edit it. Saving:
+
+1. **Refuses if the file changed on disk** since you opened it (an edit over SSH
+   is never overwritten), and while an action runs on the stack.
+2. **Checks the YAML**, then runs **`docker compose config`** on the new text in
+   the stack's own folder, so relative paths and the stack's `.env` resolve
+   exactly as they will on start. Compose's own error message is shown.
+3. **Keeps the previous version as `compose.yaml.bak`** (one generation), then
+   writes the file **in place**, so it keeps its owner and permissions.
+
+Saving does not touch running containers: **Apply** (`docker compose up -d`)
+recreates the services that changed. `.env` files are never shown or edited, and
+the audit log records hashes and line counts, never the content (compose files
+often hold passwords). The app's own stack is shown read-only.
+
+**Allowing the app to write.** The app runs as user 10001, and your compose files
+belong to you. Give it write access to the stack folders and compose files only,
+not to everything inside (stack data stays out of reach), with an ACL:
+
+```bash
+sudo apt install acl   # if setfacl is missing
+cd /home/fested/docker
+for d in */; do
+  sudo setfacl -m u:10001:rwx "$d"                 # to create the .bak and a check file
+  for f in "$d"compose.yaml "$d"compose.yml "$d"docker-compose.yaml "$d"docker-compose.yml; do
+    [ -f "$f" ] && sudo setfacl -m u:10001:rw "$f"
+  done
+done
+```
+
+Run it again after adding a stack. Without write access the editor shows the file
+read-only. Some editors replace a file when saving (a new file without the ACL);
+if a stack turns read-only after an SSH edit, run the loop again.
+
+The stacks folder must be mounted without `:ro` for this.
 
 ## Checks (the same ones CI runs)
 
