@@ -565,3 +565,17 @@ def test_ending_the_shell_is_retried_once(
     t.read_until(b"$ ")
     t.ws.close()
     _eventually(lambda: "it may still be running" in caplog.text)
+
+
+def test_cleanup_survives_the_server_cancelling_the_connection(
+    client: TestClient, csrf: str, fake: FakeGateway
+) -> None:
+    """Leaving the `with` block makes the test client cancel the server task right
+    after the disconnect, like a server shutting down. The shell must still be
+    ended and the terminal slot released, every time."""
+    rounds = 30
+    for _ in range(rounds):
+        with client.websocket_connect(_url(), headers={"Origin": ORIGIN}) as ws:
+            Term(ws).read_until(b"$ ")
+    _eventually(lambda: len(fake.ended_sessions) == rounds)
+    assert client.app.state.terminal_sockets == {}, "a terminal slot leaked"
