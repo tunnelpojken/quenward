@@ -142,7 +142,19 @@
     </aside>
     <main class="main">
       {#if detail}
-        <StackView {detail} {onExpired} onBack={() => select(null)} />
+        <!-- A fresh view per stack: a job panel or confirmation must never carry
+             over to another stack. -->
+        {#key detail.name}
+          <StackView
+            {detail}
+            {onExpired}
+            onBack={() => select(null)}
+            onChanged={() => {
+              loadDetail(selected, false);
+              loadList(false);
+            }}
+          />
+        {/key}
       {:else if detailError}
         <div class="pad"><Notice message={detailError} /></div>
       {:else if selected}

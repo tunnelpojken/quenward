@@ -4,14 +4,16 @@
 let csrfToken = null;
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, detail = null) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
 function messageFrom(status, data) {
   if (data && typeof data.detail === "string") return data.detail;
+  if (data && data.detail && typeof data.detail.message === "string") return data.detail.message;
   if (status === 422) return "Some fields are invalid or too long.";
   if (status === 429) return "Too many attempts. Try again later.";
   return `Something went wrong (HTTP ${status}).`;
@@ -46,7 +48,9 @@ async function request(method, path, body, { retry = true, background = false } 
       data = null;
     }
   }
-  if (!response.ok) throw new ApiError(response.status, messageFrom(response.status, data));
+  if (!response.ok) {
+    throw new ApiError(response.status, messageFrom(response.status, data), data?.detail ?? null);
+  }
   return data;
 }
 
@@ -107,4 +111,14 @@ export function openLogs(name, { tail = 200, container = null } = {}) {
   return new WebSocket(
     `${scheme}://${location.host}/ws/stacks/${encodeURIComponent(name)}/logs?${params}`,
   );
+}
+
+export function runAction(name, action) {
+  return request("POST", `/api/stacks/${encodeURIComponent(name)}/${action}`);
+}
+
+export function getJob(id, after = 0) {
+  return request("GET", `/api/jobs/${encodeURIComponent(id)}?after=${after}`, undefined, {
+    background: true,
+  });
 }

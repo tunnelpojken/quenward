@@ -39,6 +39,27 @@ jobs:
       - name: Tests
         run: uv run pytest
 
+  # The same scenarios against a real Docker daemon (GitHub's runners have one):
+  # creating, stopping, restarting and updating real compose stacks.
+  docker-integration:
+    name: docker-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies (must match uv.lock exactly)
+        run: uv sync --locked
+
+      - name: Docker and Compose versions
+        run: docker version --format '{{.Server.Version}}' && docker compose version
+
+      - name: Real-Docker tests
+        env:
+          DOCKER_TESTS: "1"
+        run: uv run pytest tests/test_docker_integration.py -v
+
   frontend:
     name: frontend
     runs-on: ubuntu-latest
@@ -72,6 +93,9 @@ jobs:
 
       - name: Build image
         run: docker build -t docker-project:ci .
+
+      - name: Docker CLI and compose plugin are in the image
+        run: docker run --rm --entrypoint docker docker-project:ci compose version
 
       - name: Smoke test the running container
         run: |

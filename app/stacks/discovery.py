@@ -25,6 +25,7 @@ class Stack:
     compose_file: str  # which of COMPOSE_FILE_NAMES it uses
     project: str  # compose project name (folder name normalised, or the file's `name:`)
     services: tuple[str, ...] = field(default_factory=tuple)
+    buildable: tuple[str, ...] = field(default_factory=tuple)  # services with `build:`
     error: str | None = None  # set when the compose file could not be read
 
 
@@ -33,31 +34,35 @@ def normalise_project_name(name: str) -> str:
     return re.sub(r"[^a-z0-9_-]", "", name.lower()).lstrip("_-")
 
 
-def _read_compose(path: Path) -> tuple[str | None, tuple[str, ...], str | None]:
-    """Return (project name from `name:`, service names, error). Never returns content."""
+_Read = tuple[str | None, tuple[str, ...], tuple[str, ...], str | None]
+
+
+def _read_compose(path: Path) -> _Read:
+    """Return (project from `name:`, services, buildable services, error). Never content."""
     try:
         if path.stat().st_size > _MAX_COMPOSE_BYTES:
-            return None, (), "Compose file is larger than 1 MiB"
+            return None, (), (), "Compose file is larger than 1 MiB"
         # safe_load builds plain data only: no Python objects, no code execution.
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError):
-        return None, (), "Compose file could not be read"
+        return None, (), (), "Compose file could not be read"
     except yaml.YAMLError:
-        return None, (), "Compose file is not valid YAML"
+        return None, (), (), "Compose file is not valid YAML"
     if data is None:
-        return None, (), "Compose file is empty"
+        return None, (), (), "Compose file is empty"
     if not isinstance(data, dict):
-        return None, (), "Compose file does not contain a mapping"
+        return None, (), (), "Compose file does not contain a mapping"
 
     name = data.get("name")
     name = normalise_project_name(name) if isinstance(name, str) and name.strip() else None
     services = data.get("services")
     if services is None:
-        return name, (), None
+        return name, (), (), None
     if not isinstance(services, dict):
-        return name, (), "`services` is not a mapping"
+        return name, (), (), "`services` is not a mapping"
     names = tuple(sorted(s for s in services if isinstance(s, str) and _SERVICE_NAME.match(s)))
-    return name, names, None
+    buildable = tuple(n for n in names if isinstance(services[n], dict) and "build" in services[n])
+    return name, names, buildable, None
 
 
 def discover(stacks_dir: Path) -> dict[str, Stack]:
@@ -84,13 +89,14 @@ def discover(stacks_dir: Path) -> dict[str, Stack]:
         )
         if compose is None:
             continue
-        name_override, services, error = _read_compose(compose)
+        name_override, services, buildable, error = _read_compose(compose)
         stacks[entry.name] = Stack(
             name=entry.name,
             path=entry,
             compose_file=compose.name,
             project=name_override or normalise_project_name(entry.name),
             services=services,
+            buildable=buildable,
             error=error,
         )
     return stacks

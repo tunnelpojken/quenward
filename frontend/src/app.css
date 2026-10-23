@@ -698,3 +698,130 @@ input[type="search"] {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------ actions (Phase 4) */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button.danger {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+button.danger:not(.secondary) {
+  color: #fff;
+  background: var(--bad);
+}
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 8px;
+}
+
+.confirm p {
+  margin: 0;
+  flex: 1 1 280px;
+  font-size: 0.9rem;
+}
+
+.confirm-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.job {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+
+.job.ok {
+  border-left-color: var(--ok);
+}
+
+.job.failed {
+  border-left-color: var(--bad);
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.job-head button {
+  margin-left: auto;
+}
+
+.job.failed .job-head strong {
+  color: var(--bad);
+}
+
+.job-summary {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.9rem;
+}
+
+.job-output {
+  max-height: 220px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.job-output:empty {
+  display: none;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: var(--border);
+    background: var(--accent);
+  }
+}
+
+.live-state.ended {
+  color: var(--muted);
+}

@@ -60,6 +60,8 @@
           attempts = 0;
         } else if (data.type === "dropped") {
           dropped = data.count;
+        } else if (data.type === "ended") {
+          status = "ended";
         }
       };
       ws.onclose = (event) => {
@@ -67,6 +69,12 @@
         if (event.code === 4401) {
           status = "closed";
           onExpired();
+          return;
+        }
+        if (event.code === 4410) {
+          // Every container stopped or was replaced. No retry: a new stream opens
+          // by itself once the stack's running containers change.
+          status = "ended";
           return;
         }
         if (event.code === 4404) {
@@ -110,7 +118,7 @@
 <section class="logs" aria-label="Logs">
   <div class="logs-bar">
     <h2>Logs</h2>
-    <span class="live-state {status}">{status === "live" ? "Live" : status === "closed" ? "Stopped" : status === "reconnecting" ? "Reconnecting…" : "Connecting…"}</span>
+    <span class="live-state {status}">{status === "live" ? "Live" : status === "ended" ? "Not running · recent output" : status === "closed" ? "Stopped" : status === "reconnecting" ? "Reconnecting…" : "Connecting…"}</span>
     <div class="logs-controls">
       <select bind:value={container} aria-label="Container">
         <option value="">All services</option>
@@ -131,7 +139,7 @@
     {#each shown as line (line.k)}
       <div class="ln"><span class="ts">{clock(line.t)}</span><span class="src {sourceClass(line.s)}">{line.s}</span><span class="msg">{line.m}</span></div>
     {:else}
-      <p class="muted log-empty">{status === "live" ? (filter ? "No line matches the filter." : "No log output yet.") : ""}</p>
+      <p class="muted log-empty">{status === "live" || status === "ended" ? (filter ? "No line matches the filter." : "No log output yet.") : ""}</p>
     {/each}
   </div>
   {#if !follow}

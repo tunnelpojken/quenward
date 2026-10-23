@@ -45,6 +45,7 @@ class ContainerSummary:
     health: str | None
     created: int
     ports: tuple[str, ...]
+    image_id: str = ""  # internal: full image id, used when updating
 
     def public(self) -> dict[str, Any]:
         return {
@@ -97,6 +98,7 @@ def _summary(attrs: dict[str, Any]) -> ContainerSummary:
         health=health.group(1).replace("health: ", "") if health else None,
         created=int(attrs.get("Created") or 0),
         ports=tuple(sorted(ports, key=lambda p: _port_key(p.rsplit("->", 1)[-1]))),
+        image_id=_str(attrs.get("ImageID"), 80),
     )
 
 
@@ -254,3 +256,47 @@ class DockerGateway:
                 since=since,
             )
         )
+
+    # ------------------------------------------------------------ images (updates)
+
+    def _image_op(self, fn: Callable[[docker.DockerClient], Any]) -> bool:
+        """Run an image operation. False when the image is missing or still in use."""
+        try:
+            fn(self._get_client())
+            return True
+        except docker.errors.NotFound:
+            return False
+        except docker.errors.APIError as e:
+            if e.status_code == 409:  # in use by a container, or still has other tags
+                return False
+            raise _unavailable(e) from None
+        except (docker.errors.DockerException, requests.exceptions.RequestException) as e:
+            raise _unavailable(e) from None
+
+    def image_id(self, ref: str) -> str | None:
+        """The id of an image reference (tag or id), or None if it does not exist."""
+        found: list[str] = []
+        if self._image_op(lambda c: found.append(c.images.get(ref).id)):
+            return found[0]
+        return None
+
+    def tag_image(self, image_id: str, repository: str, tag: str) -> bool:
+        """Point repository:tag at image_id (moving the tag if it already exists)."""
+        return self._image_op(lambda c: c.api.tag(image_id, repository, tag, force=True))
+
+    def remove_image(self, ref: str) -> bool:
+        """Remove a tag, or an image by id. Never forced: Docker refuses while in use."""
+        return self._image_op(lambda c: c.api.remove_image(ref, force=False))
+
+    def remove_untagged(self, image_id: str) -> bool:
+        """Remove an image by id only if no tag points at it any more.
+
+        Removing by id would also strip remaining tags, and another stack's
+        rollback or current tag may still be on a shared image.
+        """
+        tags: list[list[str]] = []
+        if not self._image_op(lambda c: tags.append(c.images.get(image_id).tags)):
+            return False  # already gone (the containerd store deletes untagged images)
+        if tags[0]:
+            return False
+        return self.remove_image(image_id)

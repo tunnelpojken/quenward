@@ -4,8 +4,8 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 3 (read-only Docker access).** Stacks, containers and live logs;
-no actions yet. Do not expose it to any network.
+**Status: Phase 4 (stack actions).** Stacks, live logs, and start / stop / restart /
+update. Do not expose it to any network.
 
 ## Requirements
 
@@ -82,6 +82,39 @@ ssh -L 5005:127.0.0.1:5005 fested@192.168.0.37
 # then open http://127.0.0.1:5005 on your own machine
 ```
 
+## Stack actions
+
+Start, Stop, Restart and Update run `docker compose` in the stack's folder, in
+the background, with the output shown live. Stop, Restart and Update ask first.
+
+- **One action per stack at a time**, and at most two overall (parallel pulls
+  are heavy on a small server).
+- **The app's own stack is read-only**: stopping it would cut you off mid-action.
+  Update it over SSH.
+- **Compose runs with a clean environment.** Compose fills `${VARIABLES}` from
+  its own environment before the stack's `.env`, so the app's settings would
+  otherwise leak into every stack.
+- **Every action is in the audit log**, with what changed. Command output is
+  shown but never stored there.
+
+**Update** pulls new images and recreates the containers that changed. Services
+with `build:` are skipped. The previous image of every service is kept, exactly
+one generation, using tags the app manages on your images:
+
+| Tag | Points at | Why |
+| --- | --- | --- |
+| `<repo>:current-<stack>-<service>` | the image the service runs | Keeps it alive if something else (Dockge, a manual `docker pull`) moves the main tag. On Docker's containerd image store an untagged image is deleted at once, even while in use. |
+| `<repo>:rollback-<stack>-<service>` | the image it ran before the last update | The kept previous version. The one before that is removed, unless another stack still uses it. |
+| `<repo>:pending-<stack>-<service>` | the running image, during an update only | Protects it while the update runs; removed afterwards. |
+
+The `current` tags are set whenever the app starts, restarts or updates a stack.
+For a stack the app has never touched, an update after an outside pull can
+report that the previous image could not be kept.
+
+**Private registries:** mount a Docker config with your credentials and point
+`DOCKER_CONFIG` at it, for example `~/.docker:/run/docker-config:ro` and
+`DOCKER_CONFIG=/run/docker-config`.
+
 ## Checks (the same ones CI runs)
 
 ```bash
@@ -94,8 +127,9 @@ uv run pytest
 cd frontend && npm audit --audit-level=high && npm run build
 ```
 
-Tests against a real Docker daemon are opt-in. They create a few throw-away
-containers (busybox) and remove them afterwards:
+Tests against a real Docker daemon run in CI (`docker-integration`) and are
+opt-in locally. They create throw-away stacks (busybox), start, stop, restart
+and update them, and remove everything afterwards:
 
 ```bash
 DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
@@ -111,6 +145,7 @@ DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
 | `PORT`       | `5005`          | Listening port inside the container   |
 | `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
 | `DOCKER_HOST` | the local socket | Where Docker is, e.g. a socket proxy (`tcp://socket-proxy:2375`) |
+| `DOCKER_CONFIG` | (none) | Folder with a Docker `config.json`, for pulling from private registries |
 | `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |
 | `NTFY_TOPIC` | (off)           | Topic for the alerts. Use its own topic, not the one Diun uses |
 | `NTFY_TOKEN_FILE` | (off)      | Path to a file holding the ntfy access token |
