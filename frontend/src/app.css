@@ -183,7 +183,7 @@ button:disabled {
 }
 
 code {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-size: 0.85em;
   padding: 1px 4px;
   background: var(--code-bg);
@@ -404,7 +404,7 @@ input[type="search"] {
 
 .stack-head .file {
   font-size: 0.85rem;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 
 .back {
@@ -489,7 +489,7 @@ input[type="search"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-size: 0.8rem;
 }
 
@@ -500,7 +500,7 @@ input[type="search"] {
 }
 
 .port {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-size: 0.75rem;
   padding: 1px 5px;
   background: var(--code-bg);
@@ -586,7 +586,7 @@ input[type="search"] {
   height: max(320px, 55vh);
   overflow: auto;
   padding: 8px 0;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-size: 0.8rem;
   line-height: 1.45;
   background: var(--log-bg);
@@ -785,7 +785,7 @@ button.danger:not(.secondary) {
   margin: 10px 0 0;
   padding: 8px 10px;
   overflow: auto;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-size: 0.78rem;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -992,7 +992,7 @@ button.danger:not(.secondary) {
 /* ------------------------------------------------------------ compose editor (Phase 5) */
 
 .file-button {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   font-weight: 400;
 }
 

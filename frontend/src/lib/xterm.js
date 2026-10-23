@@ -7,10 +7,18 @@
 // the policy does not block. The elements are then detached: xterm keeps
 // updating them, and a detached element is never checked or applied.
 
+// The bundled font (see main.js): xterm.js lays text out on a fixed cell grid, and
+// some systems' default monospace font (e.g. Nimbus Mono PS) leaves gaps around
+// letters like "f" on that grid.
+export const FONT = '"JetBrains Mono", ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
+
 export async function loadXterm() {
   const [{ Terminal }, { FitAddon }] = await Promise.all([
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
+    // xterm measures the font when it opens, so it must be loaded first.
+    document.fonts.load('13px "JetBrains Mono"').catch(() => {}),
+    document.fonts.load('bold 13px "JetBrains Mono"').catch(() => {}),
   ]);
   return { Terminal, FitAddon };
 }
@@ -55,8 +63,6 @@ export function themeFromCss() {
     selectionBackground: v("--active"),
   };
 }
-
-export const FONT = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
 
 export function base64ToBytes(text) {
   const raw = atob(text);
