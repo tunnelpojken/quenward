@@ -34,7 +34,13 @@ RUN docker --version && docker compose version
 
 # Unprivileged user. It reaches the Docker socket through the socket's group
 # (group_add with DOCKER_GID in the compose file), never as root.
-RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
+# An uncommon UID and its own GID on purpose: user IDs are shared with the host and
+# every other container. 10001 is used by many images (memos, for one), and a
+# container running as the same UID could read files this app writes, and the
+# other way around. A system-range GID could also match a host group.
+ARG APP_UID=46337
+RUN groupadd --gid "$APP_UID" app \
+    && useradd --uid "$APP_UID" --gid app --no-create-home --shell /usr/sbin/nologin app \
     && mkdir -p /data \
     && chown app:app /data \
     && chmod 700 /data

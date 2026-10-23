@@ -195,6 +195,7 @@ def test_a_final_newline_is_added(
     response = _put(client, csrf, NEW.rstrip("\n"), _get(client)["etag"])
     assert response.status_code == 200
     assert stack_file.read_text() == NEW
+    assert response.json()["content"] == NEW, "the editor is told what was written"
     assert response.json()["etag"] == _get(client)["etag"]
 
 
@@ -307,16 +308,38 @@ def test_no_save_while_an_action_runs_and_no_action_while_saving(
     assert _put(client, csrf, NEW, etag).status_code == 200
 
 
-def test_a_planted_backup_symlink_is_not_followed(
+def test_a_planted_backup_symlink_is_replaced_not_followed(
     client: TestClient, csrf: str, fake_config: FakeConfig, stack_file: Path, tmp_path: Path
 ) -> None:
     target = tmp_path / "important"
     target.write_text("do not overwrite")
-    (stack_file.parent / "compose.yaml.bak").symlink_to(target)
-    response = _put(client, csrf, NEW, _get(client)["etag"])
-    assert response.status_code == 403
+    backup = stack_file.parent / "compose.yaml.bak"
+    backup.symlink_to(target)
+    assert _put(client, csrf, NEW, _get(client)["etag"]).status_code == 200
     assert target.read_text() == "do not overwrite"
-    assert stack_file.read_text() == ORIGINAL
+    assert not backup.is_symlink()
+    assert backup.read_text() == ORIGINAL
+
+
+def test_the_backup_is_never_group_or_world_writable(
+    client: TestClient, csrf: str, fake_config: FakeConfig, stack_file: Path
+) -> None:
+    stack_file.chmod(0o664)  # group-writable for the stack owner's group
+    assert _put(client, csrf, NEW, _get(client)["etag"]).status_code == 200
+    assert (stack_file.parent / "compose.yaml.bak").stat().st_mode & 0o777 == 0o644
+    assert stack_file.stat().st_mode & 0o777 == 0o664, "the compose file keeps its own mode"
+
+
+def test_an_old_backup_the_app_cannot_write_is_replaced(
+    client: TestClient, csrf: str, fake_config: FakeConfig, stack_file: Path
+) -> None:
+    """Like a .bak left by an earlier version of the app running as another user."""
+    backup = stack_file.parent / "compose.yaml.bak"
+    backup.write_text("an old backup")
+    backup.chmod(0o444)
+    assert _put(client, csrf, NEW, _get(client)["etag"]).status_code == 200
+    assert backup.read_text() == ORIGINAL
+    assert [p.name for p in stack_file.parent.iterdir() if ".bak-" in p.name] == []
 
 
 def test_a_symlinked_compose_file_is_not_a_stack(

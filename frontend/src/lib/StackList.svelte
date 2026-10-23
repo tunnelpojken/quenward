@@ -32,7 +32,7 @@
           {#if stack.self}<span class="tag">this app</span>{/if}
           {#if stack.error}<span class="tag bad">error</span>{/if}
           <span class="count" title={STATUS_LABEL[stack.status]}>
-            {#if stack.total}{stack.running}/{stack.total}{:else}–{/if}
+            {#if stack.total}{stack.running}/{stack.expected}{:else}–{/if}
           </span>
           <span class="sr-only">{STATUS_LABEL[stack.status]}{stack.unhealthy ? ", unhealthy" : ""}</span>
         </button>

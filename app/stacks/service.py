@@ -22,14 +22,19 @@ class StackState:
         return sum(1 for c in self.containers if c.state == "running")
 
     @property
+    def expected(self) -> int:
+        """Containers a fully running stack has: every service without a profile,
+        plus any optional (profile) service that was started anyway."""
+        required = [s for s in self.stack.services if s not in self.stack.optional]
+        return max(len(required), len(self.containers))
+
+    @property
     def status(self) -> str:
-        total = len(self.containers)
-        if total == 0:
+        if not self.containers:
             return "not_deployed"
         if self.running == 0:
             return "stopped"
-        expected = max(len(self.stack.services), total)
-        return "running" if self.running >= expected else "partial"
+        return "running" if self.running >= self.expected else "partial"
 
     def public(self) -> dict[str, Any]:
         return {
@@ -37,6 +42,7 @@ class StackState:
             "status": self.status,
             "running": self.running,
             "total": len(self.containers),
+            "expected": self.expected,
             "services": list(self.stack.services),
             "unhealthy": any(c.health == "unhealthy" for c in self.containers),
             "self": self.is_self,

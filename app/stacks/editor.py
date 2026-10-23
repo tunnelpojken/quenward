@@ -53,6 +53,7 @@ class ComposeFile:
 
 @dataclass(frozen=True)
 class Saved:
+    content: str  # exactly what was written (a final newline may have been added)
     etag: str
     old_etag: str
     added: int
@@ -189,17 +190,24 @@ def _write_in_place(path: Path, data: bytes) -> None:
 
 
 def _backup(path: Path, data: bytes, mode: int) -> None:
-    """<file>.bak holds the previous version. An existing .bak that is not a plain
-    file (a symlink planted to redirect the write) is refused, never followed."""
+    """<file>.bak holds the previous version (one generation).
+
+    Written to a new file and renamed over the old .bak: the rename is atomic,
+    replaces a planted symlink instead of following it, and works whoever owns
+    the old .bak. Readable like the original, but never writable by group or
+    others: the app's group is not the stack owner's group.
+    """
     bak = path.with_name(path.name + ".bak")
+    if bak.is_dir() and not bak.is_symlink():
+        raise EditRefused(f"{bak.name} is a folder", 403)
+    tmp = path.with_name(f".{path.name}.bak-{secrets.token_hex(4)}")
+    _private_file(tmp, data, mode & ~0o022)
     try:
-        existing = bak.lstat()
-    except FileNotFoundError:
-        _private_file(bak, data, mode)
-        return
-    if not stat.S_ISREG(existing.st_mode):
-        raise EditRefused(f"{bak.name} exists and is not a regular file", 403)
-    _write_in_place(bak, data)
+        os.replace(tmp, bak)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
 
 
 def save(
@@ -245,5 +253,10 @@ def save(
     added = sum(1 for d in diff if d.startswith("+") and not d.startswith("+++"))
     removed = sum(1 for d in diff if d.startswith("-") and not d.startswith("---"))
     return Saved(
-        etag=etag(data), old_etag=expected_etag, added=added, removed=removed, warnings=warnings
+        content=text,
+        etag=etag(data),
+        old_etag=expected_etag,
+        added=added,
+        removed=removed,
+        warnings=warnings,
     )

@@ -147,7 +147,7 @@ Create the key once on the server:
 ```bash
 mkdir -p secrets
 openssl rand -base64 32 > secrets/transcript.key
-sudo chown 10001 secrets/transcript.key && sudo chmod 400 secrets/transcript.key
+sudo chown 46337 secrets/transcript.key && sudo chmod 400 secrets/transcript.key
 ```
 
 ```yaml
@@ -179,7 +179,7 @@ recreates the services that changed. `.env` files are never shown or edited, and
 the audit log records hashes and line counts, never the content (compose files
 often hold passwords). The app's own stack is shown read-only.
 
-**Allowing the app to write.** The app runs as user 10001, and your compose files
+**Allowing the app to write.** The app runs as user 46337, and your compose files
 belong to you. Give it write access to the stack folders and compose files only,
 not to everything inside (stack data stays out of reach), with an ACL:
 
@@ -187,9 +187,9 @@ not to everything inside (stack data stays out of reach), with an ACL:
 sudo apt install acl   # if setfacl is missing
 cd /home/fested/docker
 for d in */; do
-  sudo setfacl -m u:10001:rwx "$d"                 # to create the .bak and a check file
+  sudo setfacl -m u:46337:rwx "$d"                 # to create the .bak and a check file
   for f in "$d"compose.yaml "$d"compose.yml "$d"docker-compose.yaml "$d"docker-compose.yml; do
-    [ -f "$f" ] && sudo setfacl -m u:10001:rw "$f"
+    [ -f "$f" ] && sudo setfacl -m u:46337:rw "$f"
   done
 done
 ```
@@ -199,6 +199,13 @@ read-only. Some editors replace a file when saving (a new file without the ACL);
 if a stack turns read-only after an SSH edit, run the loop again.
 
 The stacks folder must be mounted without `:ro` for this.
+
+Why 46337: user IDs are shared between the host and every container. Many images
+run as 10001 or 1000, and a container with the same UID as this app could read
+and write what the app can (and the other way around). Check with
+`docker ps -q | xargs -n1 docker top | awk 'NR>1{print $1}' | sort -u` that no
+container of yours runs as 46337. To use another UID, build with
+`--build-arg APP_UID=...` and use that number in the commands above.
 
 ## Checks (the same ones CI runs)
 
@@ -254,8 +261,8 @@ and protect it with an access token, then mount the token as a file:
       - ./secrets/ntfy_token:/run/secrets/ntfy_token:ro
 ```
 
-The app runs as user 10001 inside the container, so that user must be able to read
-the file: `sudo chown 10001 secrets/ntfy_token && sudo chmod 400 secrets/ntfy_token`.
+The app runs as user 46337 inside the container, so that user must be able to read
+the file: `sudo chown 46337 secrets/ntfy_token && sudo chmod 400 secrets/ntfy_token`.
 
 Alerts are throttled (at most 10 per 5 minutes, then one "suppressed" notice), so a
 brute-force attempt cannot flood your phone.

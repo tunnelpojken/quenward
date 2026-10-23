@@ -97,6 +97,9 @@ jobs:
       - name: Docker CLI and compose plugin are in the image
         run: docker run --rm --entrypoint docker docker-project:ci compose version
 
+      - name: Runs as its own unprivileged user (46337:46337)
+        run: test "$(docker run --rm --entrypoint id docker-project:ci)" = "uid=46337(app) gid=46337(app) groups=46337(app)"
+
       - name: Smoke test the running container
         run: |
           docker run -d --name app -p 127.0.0.1:5005:5005 \

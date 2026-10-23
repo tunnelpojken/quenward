@@ -22,7 +22,7 @@
     "\x1b[B": "↓",
     "\x1b[C": "→",
     "\x1b[D": "←",
-    "\x1b": "⎋",
+    "\x1b": "[Esc]", // not "⎋": the bundled font has no such symbol
   };
 
   // Answers the terminal sends by itself when the shell asks (cursor position,
