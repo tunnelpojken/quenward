@@ -162,6 +162,43 @@ def test_partial_stack(client: TestClient, csrf: str, fake: FakeGateway, stacks_
     assert next(s for s in pihole if s["name"] == "pihole")["status"] == "partial"
 
 
+def test_profile_services_are_optional(
+    client: TestClient, csrf: str, fake: FakeGateway, stacks_dir
+) -> None:
+    """A service with `profiles:` only starts when asked (like bookorbit's kokoro), so
+    a stack without it is fully running, not partly."""
+    _write(
+        stacks_dir / "pihole" / "compose.yaml",
+        "services:\n  pihole: {}\n  unbound: {}\n  tts:\n    profiles: [tts]\n",
+    )
+
+    def entry() -> dict:
+        return next(s for s in client.get("/api/stacks").json()["stacks"] if s["name"] == "pihole")
+
+    assert entry()["status"] == "running"
+    assert (entry()["running"], entry()["expected"]) == (2, 2)
+    detail = client.get("/api/stacks/pihole").json()
+    assert detail["missing_services"] == []
+    assert detail["optional_services"] == ["tts"]
+
+    # Started anyway (--profile tts): now it counts, and stopping it makes the stack partial.
+    tts = container_attrs("eeeeeeeeeeee", "tts", "pihole", str(stacks_dir / "pihole"))
+    fake.containers.append(tts)
+    assert (entry()["status"], entry()["running"], entry()["expected"]) == ("running", 3, 3)
+    assert client.get("/api/stacks/pihole").json()["optional_services"] == []
+    fake.containers[-1] = {**tts, "State": "exited", "Status": "Exited (0)"}
+    assert (entry()["status"], entry()["expected"]) == ("partial", 3)
+
+    # A required service without a container still makes the stack partial.
+    _write(
+        stacks_dir / "pihole" / "compose.yaml",
+        "services:\n  pihole: {}\n  unbound: {}\n  missing: {}\n",
+    )
+    fake.containers.pop()
+    assert (entry()["status"], entry()["running"], entry()["expected"]) == ("partial", 2, 3)
+    assert client.get("/api/stacks/pihole").json()["missing_services"] == ["missing"]
+
+
 def test_stack_detail(client: TestClient, csrf: str, fake: FakeGateway) -> None:
     detail = client.get("/api/stacks/pihole").json()
     assert detail["missing_services"] == []

@@ -74,7 +74,13 @@ def get_stack(name: str, request: Request) -> dict[str, Any]:
     return {
         **state.public(),
         "containers": containers,
-        "missing_services": [s for s in state.stack.services if s not in with_container],
+        "missing_services": [
+            s
+            for s in state.stack.services
+            if s not in with_container and s not in state.stack.optional
+        ],
+        # Profile services nobody started: not missing, just not asked for.
+        "optional_services": [s for s in state.stack.optional if s not in with_container],
         "buildable": list(state.stack.buildable),
         "job": request.app.state.jobs.running_job(state.stack.name),
     }

@@ -97,6 +97,11 @@
   {#if detail.missing_services.length}
     <p class="notice info">Not created yet: {detail.missing_services.join(", ")}</p>
   {/if}
+  {#if detail.optional_services.length}
+    <p class="notice info">
+      Optional, not started (compose profile): {detail.optional_services.join(", ")}
+    </p>
+  {/if}
   {#if detail.buildable.length}
     <p class="notice info">
       Built locally, so skipped by Update: {detail.buildable.join(", ")}
