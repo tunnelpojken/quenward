@@ -71,6 +71,8 @@ def recording(client: TestClient) -> bytes:
 
 def _key_file(directory: Path, text: str) -> Path:
     path = directory / "transcript.key"
+    if path.exists():
+        path.chmod(0o600)  # made read-only by an earlier call; only root could rewrite it
     path.write_text(text + "\n")
     path.chmod(0o400)
     return path
@@ -492,7 +494,6 @@ def test_key_file_is_validated(tmp_path: Path) -> None:
     urlsafe = base64.urlsafe_b64encode(bytes(range(200, 232))).decode()
     assert len(transcripts.load_key(_key_file(tmp_path, urlsafe))) == 32
     for bad in ("not base64 !!", base64.b64encode(b"short").decode(), ""):
-        (tmp_path / "transcript.key").chmod(0o600)
         with pytest.raises(transcripts.TranscriptKeyError):
             transcripts.load_key(_key_file(tmp_path, bad))
 
