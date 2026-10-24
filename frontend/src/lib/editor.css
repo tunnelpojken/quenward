@@ -1,4 +1,8 @@
-/* Inside the compose editor's shadow root only. Colours come from the app theme. */
+/* Inside the compose editor's shadow root only. Colours come from the app theme.
+
+   CodeMirror adds its own base styles after this sheet, with selectors like
+   ".ͼ2 .cm-gutters". Rules that must win over them are written as
+   ":host .cm-editor ...", which is more specific. */
 
 :host {
   display: block;
@@ -25,18 +29,19 @@
   line-height: 1.5;
 }
 
-.cm-gutters {
+:host .cm-editor .cm-gutters {
   color: var(--muted);
   background: var(--log-bg);
   border-right: 1px solid var(--border);
 }
 
-.cm-activeLine,
-.cm-activeLineGutter {
+:host .cm-editor .cm-activeLine,
+:host .cm-editor .cm-activeLineGutter {
+  color: var(--text);
   background: var(--hover);
 }
 
-.cm-cursor {
+:host .cm-editor .cm-cursor {
   border-left-color: var(--accent);
 }
 
@@ -46,12 +51,12 @@
   background: var(--active) !important;
 }
 
-.cm-searchMatch {
+:host .cm-editor .cm-searchMatch {
   background: var(--info-bg);
   outline: 1px solid var(--accent);
 }
 
-.cm-panels {
+:host .cm-editor .cm-panels {
   color: var(--text);
   background: var(--surface);
   border-color: var(--border);
@@ -66,7 +71,7 @@
   border-radius: 4px;
 }
 
-.cm-tooltip {
+:host .cm-editor .cm-tooltip {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);

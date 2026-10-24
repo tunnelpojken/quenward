@@ -2,6 +2,7 @@
   import "@xterm/xterm/css/xterm.css";
   import { openTerminal } from "./api.js";
   import { FONT, adoptStyles, loadXterm, themeFromCss } from "./xterm.js";
+  import { onThemeChange } from "./theme.js";
 
   let { stack, container, onClose, onExpired } = $props();
 
@@ -95,8 +96,14 @@
       resizeObserver.observe(box);
     })();
 
+    // Follow a theme switch (or the system's light/dark) while the terminal is open.
+    const stopTheme = onThemeChange(() => {
+      if (term) term.options.theme = themeFromCss();
+    });
+
     return () => {
       closed = true;
+      stopTheme();
       resizeObserver?.disconnect();
       ws?.close();
       term?.dispose();
