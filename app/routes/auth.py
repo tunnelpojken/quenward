@@ -196,7 +196,10 @@ def logout(
     user: CurrentUser = Depends(require_user),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> None:
-    conn.execute("DELETE FROM sessions WHERE id = ?", (user.session.id,))
+    # Logging out ends every session of this user, on every device: one admin with
+    # root-equivalent access, so a forgotten browser elsewhere must not stay in.
+    # Open log streams and terminals close at their next session check.
+    sessions.delete_all_for_user(conn, user.id)
     audit.record(conn, "logout", "ok", user_id=user.id, ip=client_ip(request))
     response.delete_cookie(
         sessions.COOKIE_NAME, path="/", secure=True, httponly=True, samesite="strict"
