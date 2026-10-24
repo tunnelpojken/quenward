@@ -158,7 +158,8 @@ jobs:
           tar -xzf trivy.tar.gz trivy
           ./trivy --version
           ./trivy image --scanners vuln,secret --severity HIGH,CRITICAL \
-            --ignore-unfixed --exit-code 1 --no-progress docker-project:ci
+            --ignore-unfixed --exit-code 1 --no-progress \
+            --ignorefile "$GITHUB_WORKSPACE/.trivyignore" docker-project:ci
 
       - name: App log
         if: always()

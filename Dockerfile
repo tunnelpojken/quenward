@@ -32,6 +32,10 @@ COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose \
      /usr/local/libexec/docker/cli-plugins/docker-compose
 RUN docker --version && docker compose version
 
+# pip is not needed at runtime (the app runs from its own virtualenv), and it
+# carries old copies of urllib3, msgpack and setuptools that scanners flag.
+RUN python -m pip uninstall --yes --root-user-action=ignore pip
+
 # Unprivileged user. It reaches the Docker socket through the socket's group
 # (group_add with DOCKER_GID in the compose file), never as root.
 # An uncommon UID and its own GID on purpose: user IDs are shared with the host and
