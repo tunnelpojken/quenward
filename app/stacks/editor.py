@@ -23,15 +23,18 @@ import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from app.stacks import compose
-from app.stacks.discovery import Stack
+from app.stacks.discovery import Stack, normalise_project_name
 
 MAX_COMPOSE = 256 * 1024
 _CHECK_TIMEOUT = 30
 _MAX_OUTPUT_LINES = 40
+_MAX_ENV_BYTES = 64 * 1024
+_MIN_SECRET = 3  # shorter values ("1", "on") would garble every message
 
 
 class EditRefused(Exception):
@@ -104,7 +107,7 @@ def read(stacks_dir: Path, stack: Stack) -> ComposeFile:
     return ComposeFile(name=stack.compose_file, content=content, etag=etag(data), writable=writable)
 
 
-def check_yaml(text: str) -> None:
+def check_yaml(text: str) -> dict[str, Any]:
     """The cheap check first, with a line number that points at the mistake."""
     if "\x00" in text:
         raise EditRefused("The text contains a NUL character")
@@ -120,6 +123,40 @@ def check_yaml(text: str) -> None:
         raise EditRefused("A compose file must be a mapping (key: value)")
     if not isinstance(data.get("services"), dict) or not data["services"]:
         raise EditRefused("A compose file needs a `services:` section with at least one service")
+    return data
+
+
+def _env_values(folder: Path) -> list[str]:
+    """Values from the stack's .env, only to hide them in compose's messages.
+
+    Compose fills ${VARIABLES} from .env before it validates, and its error
+    messages quote the filled-in value ("invalid containerPort: <password>").
+    The file is read here, never sent anywhere.
+    """
+    try:
+        fd = os.open(folder / ".env", os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return []
+    with os.fdopen(fd, "rb") as f:
+        raw = f.read(_MAX_ENV_BYTES)
+    values = []
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if not sep or key.startswith("#"):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        if len(value) >= _MIN_SECRET:
+            values.append(value)
+    # Longest first, so a value containing another is hidden whole.
+    return sorted(set(values), key=len, reverse=True)
+
+
+def _hide(lines: list[str], values: list[str]) -> list[str]:
+    for value in values:
+        lines = [line.replace(value, "[value from .env]") for line in lines]
+    return lines
 
 
 def _private_file(path: Path, data: bytes, mode: int) -> None:
@@ -172,7 +209,7 @@ def check_compose(
             check.unlink()
     # Compose names the temporary file in its messages; show the real name.
     output = [line.replace(str(check), path.name).replace(check.name, path.name) for line in output]
-    output = output[-_MAX_OUTPUT_LINES:]
+    output = _hide(output[-_MAX_OUTPUT_LINES:], _env_values(path.parent))
     if not result.ok:
         message = "docker compose did not accept the file"
         if result.timed_out:
@@ -216,7 +253,10 @@ def save(
     text: str,
     expected_etag: str,
     runner: Callable[..., compose.Result],
+    reserved_project: str | None = None,
 ) -> Saved:
+    """Save the compose file. `reserved_project` is the app's own compose project:
+    a file that would run under that name is refused (it would act on the app)."""
     path = compose_path(stacks_dir, stack)
     if text and not text.endswith("\n"):
         text += "\n"  # text files end with a newline; `echo x >> file` relies on it
@@ -229,7 +269,18 @@ def save(
             "The file was changed on disk since you opened it. Reload to see the new version.",
             409,
         )
-    check_yaml(text)
+    parsed = check_yaml(text)
+    if reserved_project:
+        name = parsed.get("name")
+        project = normalise_project_name(
+            name if isinstance(name, str) and name.strip() else stack.name
+        )
+        if project == reserved_project:
+            raise EditRefused(
+                f"The project name '{project}' belongs to this app's own stack. "
+                "Starting or stopping this stack would act on the app itself.",
+                422,
+            )
     warnings = check_compose(stack, path, data, runner)
     if etag(_read_bytes(path)) != expected_etag:  # changed while compose was checking
         raise EditRefused("The file was changed on disk meanwhile. Reload and try again.", 409)

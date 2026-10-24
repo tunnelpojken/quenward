@@ -2,6 +2,7 @@
 
 import hmac
 import sqlite3
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -18,6 +19,7 @@ protected_router = APIRouter(prefix="/api", dependencies=[Depends(require_user)]
 
 _INVALID_LOGIN = "Invalid username or password"
 _TOO_MANY = "Too many attempts. Try again later."
+_BUSY = "Too many logins at once. Try again in a moment."
 
 
 class SetupRequest(BaseModel):
@@ -93,7 +95,10 @@ def setup(
     except passwords.PolicyError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
 
-    password_hash = passwords.hash_password(body.password)
+    try:
+        password_hash = passwords.hash_password(body.password)
+    except passwords.Busy:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _BUSY) from None
     conn.execute("BEGIN IMMEDIATE")
     try:
         # Re-check inside the write lock: two simultaneous setups cannot both win.
@@ -130,25 +135,19 @@ def _alert_failed_login(
         alerter.send(Alert("Failed login", f"Failed login for {who} from {ip}.", tags=("warning",)))
 
 
-@public_router.post("/login", dependencies=[Depends(check_origin)])
-def login(
-    body: LoginRequest,
-    request: Request,
-    response: Response,
-    conn: sqlite3.Connection = Depends(get_db),
-) -> SessionInfo:
-    state = request.app.state
-    ip = client_ip(request)
-    if state.limiter.is_blocked(body.username, ip):
-        audit.record(conn, "login_blocked", "denied", ip=ip)
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY)
-
+def _check_login(
+    state: Any, conn: sqlite3.Connection, body: LoginRequest, ip: str | None
+) -> tuple[sqlite3.Row, str | None]:
+    """Check the password of a reserved attempt. Raises 401 on a wrong login."""
     user = conn.execute(
         "SELECT id, username, password_hash FROM users WHERE username = ?", (body.username,)
     ).fetchone()
-    ok, upgraded_hash = passwords.verify_password(
-        user["password_hash"] if user else None, body.password
-    )
+    try:
+        ok, upgraded_hash = passwords.verify_password(
+            user["password_hash"] if user else None, body.password
+        )
+    except passwords.Busy:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _BUSY) from None
     if not ok:
         locked = state.limiter.record_failure(body.username, ip)
         # The typed username is only logged when it matches a real account:
@@ -164,6 +163,31 @@ def login(
         )
         _alert_failed_login(state.alerter, user["username"] if user else None, ip, locked)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _INVALID_LOGIN)
+    return user, upgraded_hash
+
+
+@public_router.post("/login", dependencies=[Depends(check_origin)])
+def login(
+    body: LoginRequest,
+    request: Request,
+    response: Response,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> SessionInfo:
+    state = request.app.state
+    ip = client_ip(request)
+    # Reserved before the (slow) password check: attempts still being checked
+    # count towards the limit, so parallel requests cannot all slip past it.
+    attempt = state.limiter.begin(body.username, ip)
+    if attempt != "ok":
+        # Recorded once per lock, not for every refused request: refusals cost an
+        # attacker nothing, and each row would stay in the audit log for good.
+        if attempt == "locked_first":
+            audit.record(conn, "login_blocked", "denied", ip=ip)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY)
+    try:
+        user, upgraded_hash = _check_login(state, conn, body, ip)
+    finally:
+        state.limiter.end(body.username, ip)
 
     state.limiter.record_success(body.username)
     if upgraded_hash:
@@ -227,7 +251,10 @@ def password_reset(
         # The link stays valid so the user can try a better password.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
 
-    password_hash = passwords.hash_password(body.password)
+    try:
+        password_hash = passwords.hash_password(body.password)
+    except passwords.Busy:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _BUSY) from None
     conn.execute("BEGIN IMMEDIATE")
     try:
         # Re-check inside the write lock: the same link cannot be used twice.

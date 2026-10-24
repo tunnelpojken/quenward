@@ -25,5 +25,10 @@ stacks.example.com:8443 {
 		-Server
 	}
 
+	# The app refuses larger bodies itself; this stops them one step earlier.
+	request_body {
+		max_size 1MB
+	}
+
 	reverse_proxy app:5005
 }

@@ -165,9 +165,18 @@ def put_compose(
             status.HTTP_403_FORBIDDEN, "This is the stack this app runs in. Change it over SSH."
         )
     try:
+        app_project = service.app_project(request.app.state.docker)
+    except DockerUnavailable as e:
+        raise _unavailable(e) from None
+    try:
         with jobs.editing(state.stack.name):
             saved = editor.save(
-                settings.stacks_dir, state.stack, body.content, body.etag, jobs.runner
+                settings.stacks_dir,
+                state.stack,
+                body.content,
+                body.etag,
+                jobs.runner,
+                reserved_project=app_project,
             )
     except ActionRefused as e:
         raise HTTPException(e.status, {"message": str(e), "output": [], "job": e.job_id}) from None

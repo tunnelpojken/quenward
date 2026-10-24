@@ -252,7 +252,11 @@ Click a stack's compose file name to view and edit it. Saving:
 Saving does not touch running containers: **Apply** (`docker compose up -d`)
 recreates the services that changed. `.env` files are never shown or edited, and
 the audit log records hashes and line counts, never the content (compose files
-often hold passwords). The app's own stack is shown read-only.
+often hold passwords). The app's own stack is shown read-only, and so is any stack that would run under
+the app's own compose project name (a copy of its compose file, or a `name:` set
+to it): starting or stopping it would act on the app itself. A save that would
+give a stack that name is refused. In compose's error messages, values from the
+stack's `.env` are replaced by `[value from .env]`.
 
 **Allowing the app to write.** The app runs as user 46337, and your compose files
 belong to you. Give it write access to the stack folders and compose files only,
@@ -317,6 +321,7 @@ DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
 | `PORT`       | `5005`          | Listening port inside the container   |
 | `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
 | `FORWARDED_ALLOW_IPS` | (none) | Address (or CIDR) of your reverse proxy. Only requests from it may set the client IP with `X-Forwarded-For`. See [HTTPS behind a reverse proxy](#https-behind-a-reverse-proxy) |
+| `HOST`       | `0.0.0.0` in a container, else `127.0.0.1` | Address to listen on. Inside a container the compose port binding decides what is reachable |
 | `DOCKER_HOST` | the local socket | Where Docker is, e.g. a socket proxy (`tcp://socket-proxy:2375`) |
 | `DOCKER_CONFIG` | (none) | Folder with a Docker `config.json`, for pulling from private registries |
 | `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |

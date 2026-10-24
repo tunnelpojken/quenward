@@ -57,7 +57,12 @@ Out of scope:
 - Passwords hashed with Argon2id. At least 12 characters, and common passwords
   are refused.
 - At most 5 failed logins per username and 20 per IP address in 15 minutes, then
-  a 15 minute lockout. Failures, lockouts and resets can be sent to ntfy.
+  a 15 minute lockout. Attempts still being checked count towards the limit, so
+  parallel requests cannot get extra guesses. Failures, lockouts and resets can
+  be sent to ntfy; a lockout is written to the audit log once, not per request.
+- Nothing reachable without logging in can exhaust memory: request bodies over
+  1 MiB are refused before they are read, and only one password check (64 MiB
+  of Argon2 work) runs at a time.
 - The first admin is created with a one-time setup token printed to the server's
   log. There is no "forgot password" in the web UI: a reset needs a command on
   the server and gives a link that works once, for 15 minutes.
@@ -92,12 +97,16 @@ Out of scope:
   the Docker socket through the socket's group, never as root.
 - Container details sent to the browser come from an explicit list of safe
   fields. Environment variables, labels, commands and healthcheck output are
-  never sent. `.env` files are never shown or edited.
+  never sent. `.env` files are never shown or edited, and their values are
+  hidden in compose's error messages.
 - `docker compose` runs with a clean environment, so the app's own settings never
   reach a stack.
-- The app's own stack is read-only in the UI.
+- The app's own stack is read-only in the UI, and so is any stack that would
+  run under the app's own compose project name.
 - A terminal is a shell inside a running container, never on the host. Closing
   it ends the shell and everything started from it.
+- The client IP (used for rate limits, alerts and the audit log) is only taken
+  from `X-Forwarded-For` when `FORWARDED_ALLOW_IPS` names the proxy.
 
 **Records**
 
@@ -125,6 +134,14 @@ third-party actions.
 ZAP active scans (which attack the app) have been run by hand, with and without
 the login rate limit. They found no Medium or High issues and caused no server
 errors.
+
+Before v0.1.0 the code was also reviewed by an independent AI agent that had
+not seen it being written. It found no way in without a password and no CSRF
+or XSS, but seven ways to crash or wear down the app or slip past its own
+limits (oversized requests, parallel login attempts, audit log growth, the
+app's own project name, `.env` values in error messages, proxy-header and
+own-container defaults). All seven are fixed, each with a regression test in
+`tests/test_hardening.py`. A review by a person is still welcome.
 
 **Accepted findings** are listed in [`.trivyignore`](.trivyignore), each with the
 reason it does not apply and an expiry date, after which the scan fails on it
