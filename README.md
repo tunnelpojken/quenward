@@ -1,6 +1,6 @@
-# docker-project
+# QuenWard
 
-Working name. A self-hosted web UI for managing Docker Compose stacks: live logs,
+A self-hosted web UI for managing Docker Compose stacks: live logs,
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
@@ -111,7 +111,7 @@ DNS provider's API and Let's Encrypt checks it. The example uses Cloudflare:
    docker build -t caddy-cloudflare:local caddy-image
    echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
    docker compose up -d
-   docker logs -f stack-manager-caddy     # "certificate obtained successfully"
+   docker logs -f quenward-caddy     # "certificate obtained successfully"
    ```
 
 Then open `https://stacks.example.com:8443`.
@@ -347,7 +347,7 @@ brute-force attempt cannot flood your phone.
 There is deliberately no "forgot password" in the web UI. On the server, run:
 
 ```bash
-docker exec -it docker-project-dev reset-password
+docker exec -it quenward-dev reset-password
 ```
 
 This logs the user out everywhere and prints a link that works once, for 15 minutes.
@@ -358,7 +358,7 @@ The link uses the first address in `ALLOWED_ORIGINS`.
 With no admin account, the app prints a one-time setup token to its log:
 
 ```bash
-docker logs docker-project-dev 2>&1 | grep "setup token"
+docker logs quenward-dev 2>&1 | grep "setup token"
 ```
 
 The token creates the first admin and then stops working for good. Until setup is

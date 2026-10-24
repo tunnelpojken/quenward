@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await task
 
     app = FastAPI(
-        title="docker-project",
+        title="QuenWard",
         lifespan=lifespan,
         # No interactive API docs: they would publish the full route list and
         # load scripts from a CDN, which the Content-Security-Policy forbids.

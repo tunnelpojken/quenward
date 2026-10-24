@@ -1,4 +1,4 @@
-# HTTPS for the stack manager, on port 8443 only.
+# HTTPS for QuenWard, on port 8443 only.
 {
 	# Nothing may reconfigure this Caddy while it runs.
 	admin off

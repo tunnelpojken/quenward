@@ -6,8 +6,8 @@
 
 services:
   app:
-    image: docker-project:latest   # built from the repository: docker build -t docker-project .
-    container_name: stack-manager
+    image: quenward:latest   # built from the repository: docker build -t quenward .
+    container_name: quenward
     restart: unless-stopped
     ports:
       # Not needed through Caddy. Kept for access over an SSH tunnel if Caddy is down:
@@ -45,7 +45,7 @@ services:
 
   caddy:
     image: caddy-cloudflare:local   # built from ./caddy-image
-    container_name: stack-manager-caddy
+    container_name: quenward-caddy
     restart: unless-stopped
     # Its own user, not the app's: Caddy can read the Cloudflare token and the
     # app cannot, and the app's secrets are unreadable to Caddy.

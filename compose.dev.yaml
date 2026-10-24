@@ -8,8 +8,8 @@
 services:
   app:
     build: .
-    image: docker-project:dev
-    container_name: docker-project-dev
+    image: quenward:dev
+    container_name: quenward-dev
     restart: unless-stopped
     ports:
       # Only reachable from this machine, never from the network.

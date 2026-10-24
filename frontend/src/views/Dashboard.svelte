@@ -131,7 +131,7 @@
 
 <div class="app-shell">
   <header class="topbar">
-    <span class="brand-mark">docker-project</span>
+    <span class="brand-mark">QuenWard</span>
     <span class="topbar-spacer"></span>
     <a class="topbar-link" class:active={history !== null} href="#/terminals">Terminal history</a>
     <span class="muted user">{session.username}</span>
