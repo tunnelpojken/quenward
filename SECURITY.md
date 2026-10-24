@@ -68,6 +68,8 @@ Out of scope:
   bound to the exact host. Only its hash is stored.
 - Ends after 30 minutes without activity, and after 3 hours in any case.
   Background polling does not count as activity.
+- Logging out ends all of your sessions, on every device. Open log streams and
+  terminals close within seconds.
 - Every change needs a CSRF token and an `Origin` that is in `ALLOWED_ORIGINS`.
   WebSockets (logs, terminal) check the `Origin` too, since browsers do not
   apply the same-origin policy to them.

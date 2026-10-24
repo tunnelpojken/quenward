@@ -213,6 +213,21 @@ def test_logout_kills_the_session(client: TestClient, csrf: str) -> None:
     assert client.get("/api/session").status_code == 401
 
 
+def test_logout_ends_the_users_sessions_on_every_device(
+    client: TestClient, csrf: str, settings: Settings
+) -> None:
+    conn = db.connect(settings.db_path)
+    try:
+        user_id = conn.execute("SELECT id FROM users").fetchone()["id"]
+        elsewhere = sessions.create(conn, user_id, settings, "192.0.2.7", "other browser")
+    finally:
+        conn.close()
+    response = client.post("/api/logout", headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 204
+    _use_cookie(client, elsewhere)
+    assert client.get("/api/session").status_code == 401
+
+
 def test_new_login_replaces_the_old_session(client: TestClient, admin) -> None:
     first = _session_cookie(_login(client))[sessions.COOKIE_NAME].value
     second = _session_cookie(_login(client))[sessions.COOKIE_NAME].value
