@@ -106,7 +106,7 @@ jobs:
             --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges:true \
             quenward:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if [ "$(curl -fsS http://127.0.0.1:5005/healthz)" = "ok" ]; then
               curl -fsS http://127.0.0.1:5005/ | grep -q '<div id="app">'
               echo "Container is healthy and serves the frontend"
@@ -142,24 +142,9 @@ jobs:
 
       # Trivy: known vulnerabilities (and stray secrets) in the image, from the OS
       # packages to the Python packages and the Docker CLI binaries. Fails on HIGH
-      # or CRITICAL ones that have a fix available.
-      # Trivy's own release channels were compromised in March 2026
-      # (CVE-2026-33634), so no trivy-action: the release tarball is pinned by
-      # SHA-256, taken from a checksums file whose cosign signature was verified
-      # against Trivy's release workflow.
+      # or CRITICAL ones that have a fix available. See the script for details.
       - name: Trivy image scan
-        env:
-          TRIVY_VERSION: "0.75.0"
-          TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
-        run: |
-          cd "$RUNNER_TEMP"
-          curl -fsSLo trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum --check --strict
-          tar -xzf trivy.tar.gz trivy
-          ./trivy --version
-          ./trivy image --scanners vuln,secret --severity HIGH,CRITICAL \
-            --ignore-unfixed --exit-code 1 --no-progress \
-            --ignorefile "$GITHUB_WORKSPACE/.trivyignore" quenward:ci
+        run: .github/scripts/trivy-scan.sh quenward:ci
 
       - name: App log
         if: always()

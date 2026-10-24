@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---- 1. Build the Svelte frontend ------------------------------------------
-FROM node:24-alpine AS frontend
+# Built on the machine's own platform even for an arm64 image: the output is
+# plain HTML, JS and CSS, the same everywhere, and emulation is slow.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-fund --no-audit
