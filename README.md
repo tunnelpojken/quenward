@@ -370,6 +370,29 @@ docker logs quenward-dev 2>&1 | grep "setup token"
 The token creates the first admin and then stops working for good. Until setup is
 done, every restart prints a new one.
 
+## Releases
+
+Pushing a version tag builds the image for amd64 and arm64, runs the same checks
+as CI (smoke test, user check, Trivy), pushes it to
+`ghcr.io/tunnelpojken/quenward` and drafts a GitHub release to review and publish
+by hand. The tag must match `version` in `pyproject.toml`:
+
+```bash
+git tag -a v0.1.0 -m "QuenWard 0.1.0"
+git push origin v0.1.0
+```
+
+A release `x.y.z` is tagged `x.y.z`, `x.y` and `latest`; a pre-release such as
+`0.2.0-rc.1` only gets its own tag. Every image carries an SBOM and build
+provenance (`docker buildx imagetools inspect ghcr.io/tunnelpojken/quenward:0.1`).
+
+While the repository is private, so is the image. To pull it on a server, log in
+once with a personal access token (classic) that has only `read:packages`:
+
+```bash
+docker login ghcr.io -u tunnelpojken    # paste the token as the password
+```
+
 ## Database migrations
 
 Plain SQL files in `app/migrations/`, numbered `0001_…`, `0002_…`, run once each

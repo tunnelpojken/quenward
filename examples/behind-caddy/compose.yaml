@@ -6,7 +6,7 @@
 
 services:
   app:
-    image: quenward:latest   # built from the repository: docker build -t quenward .
+    image: ghcr.io/tunnelpojken/quenward:0.1   # amd64 and arm64; or build it: docker build -t quenward .
     container_name: quenward
     restart: unless-stopped
     ports:
