@@ -4,9 +4,11 @@ Working name. A self-hosted web UI for managing Docker Compose stacks: live logs
 start / stop / update, an exec terminal and a compose editor, behind hardened
 authentication. See the build draft for the full design.
 
-**Status: Phase 5 (terminal and compose editor).** Stacks, live logs, start / stop /
-restart / update, an interactive terminal into containers, and editing compose
-files. Do not expose it to any network.
+**Status: Phase 6 (hardening before a first release).** Stacks, live logs, start /
+stop / restart / update, an interactive terminal into containers, and editing
+compose files. Meant for your LAN or VPN only, behind HTTPS: see
+[HTTPS behind a reverse proxy](#https-behind-a-reverse-proxy) and
+[SECURITY.md](SECURITY.md). Never expose it to the internet.
 
 ## Requirements
 
@@ -56,8 +58,8 @@ them in the dashboard:
 ## Docker access
 
 **Access to the Docker socket is root access to the host.** Anyone who can use
-this app can, in later phases, start containers that read any file on the
-machine. That is why login comes first, why the app is meant for LAN / VPN use
+this app can start containers that read any file on the machine, or open a
+terminal in one that does. That is why login comes first, why the app is meant for LAN / VPN use
 only, and why it runs as an unprivileged user that reaches the socket only
 through the socket's group (`group_add` with `DOCKER_GID`).
 
@@ -72,15 +74,82 @@ that are symlinks are ignored.
 entrypoints, healthcheck commands and their output. Container details are built
 from an explicit list of safe fields. Log lines are shown as plain text.
 
-### Trying it on festedlab before HTTPS exists
+## HTTPS behind a reverse proxy
 
 The session cookie is `Secure`, so browsers only send it over HTTPS or to
-`localhost`. Until Caddy is set up, keep the port bound to `127.0.0.1` on the
-server and use an SSH tunnel:
+`localhost`. To use the app from another machine, put it behind a reverse proxy
+with a real certificate. [`examples/behind-caddy/`](examples/behind-caddy/) is a
+complete, working setup: the app plus its own Caddy, in one compose file.
+
+**Why its own Caddy.** The app is not something to share a proxy with a public
+website. A separate Caddy, on its own port, has no route from your public sites
+or tunnels to the app, and a mistake in one config cannot expose the other.
+
+**The certificate comes from a DNS challenge**, so the server does not have to be
+reachable from the internet. Caddy creates a temporary TXT record through your
+DNS provider's API and Let's Encrypt checks it. The example uses Cloudflare:
+
+1. Your domain's DNS must be on Cloudflare. Create an API token with
+   **Zone → DNS → Edit** and **Zone → Zone → Read**, for that zone only.
+2. Save it in a file only Caddy's user can read (never in the environment, where
+   `docker inspect` shows it):
+
+   ```bash
+   mkdir -p secrets caddy/data caddy/config
+   nano secrets/cloudflare_token          # paste the token, save
+   sudo chown 46338:46338 secrets/cloudflare_token caddy/data caddy/config
+   sudo chmod 400 secrets/cloudflare_token
+   ```
+
+3. Point the name at the server **on your local DNS only** (Pi-hole, your router),
+   not in public DNS. For example `stacks.example.com → 192.168.0.37`. A public
+   record is not needed for the certificate, and leaving it out keeps the name
+   from leading anywhere outside your network.
+4. Build Caddy with the Cloudflare module, then start everything:
+
+   ```bash
+   docker build -t caddy-cloudflare:local caddy-image
+   echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
+   docker compose up -d
+   docker logs -f stack-manager-caddy     # "certificate obtained successfully"
+   ```
+
+Then open `https://stacks.example.com:8443`.
+
+Things the example does on purpose, and that matter if you build your own:
+
+- **`ALLOWED_ORIGINS` must list the HTTPS address** exactly as typed in the
+  browser, port included. Logins and actions from any other origin are refused.
+- **`FORWARDED_ALLOW_IPS` names the proxy, and only the proxy.** The app then
+  takes the client's IP from `X-Forwarded-For`, which the login rate limit, the
+  security alerts and the audit log use. Trusting it from anywhere else lets
+  anyone pick the IP they appear to come from. The example gives Caddy a fixed
+  address on a small network for this. A CIDR range works too, but keep it to
+  networks only the proxy is on. Leave it unset without a proxy.
+- **Caddy runs as its own user** (46338), so it can read the Cloudflare token
+  and the app cannot, and the other way around for the app's secrets.
+- **`admin off`**: nothing can reconfigure Caddy while it runs.
+- **`setcap -r` in the Caddy image.** The official image gives the binary a
+  capability to bind ports below 1024. With `cap_drop: ALL` and
+  `no-new-privileges` it then refuses to start (`exec ... operation not
+  permitted`). Port 8443 needs no capability.
+- **`resolvers 1.1.1.1 1.0.0.1`**: Caddy checks the challenge record on public
+  DNS. A local resolver that answers the name itself (Pi-hole) would never show
+  the TXT record.
+
+**Using a proxy you already have** (Caddy, Traefik, nginx) works the same way:
+proxy to `app:5005` (WebSockets must be passed through, which Caddy and Traefik
+do by default), set `ALLOWED_ORIGINS` to the HTTPS address, and set
+`FORWARDED_ALLOW_IPS` to the proxy's address on the network it shares with the
+app. Do not route it through a public tunnel (Cloudflare Tunnel, ngrok) and do
+not forward its port on your router.
+
+**If the proxy is down**, the app is still reachable over an SSH tunnel through
+its `127.0.0.1` port binding:
 
 ```bash
-ssh -L 5005:127.0.0.1:5005 fested@192.168.0.37
-# then open http://127.0.0.1:5005 on your own machine
+ssh -L 5005:127.0.0.1:5005 you@server
+# then open http://127.0.0.1:5005 (keep it in ALLOWED_ORIGINS for this)
 ```
 
 ## Stack actions
@@ -219,6 +288,11 @@ uv run pytest
 cd frontend && npm audit --audit-level=high && npm run build
 ```
 
+CI also scans the built image: **Trivy** for known vulnerabilities (fails on
+fixable HIGH and CRITICAL; accepted exceptions are in `.trivyignore`, each with
+a reason and an expiry date) and a **ZAP** baseline scan of the running
+container (fails on Medium and High; the plan is `.github/zap/baseline.yaml`).
+
 Tests against a real Docker daemon run in CI (`docker-integration`) and are
 opt-in locally. They create throw-away stacks (busybox), start, stop, restart
 and update them, and remove everything afterwards:
@@ -236,6 +310,7 @@ DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
 | `STATIC_DIR` | `frontend/dist` | Built frontend                        |
 | `PORT`       | `5005`          | Listening port inside the container   |
 | `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
+| `FORWARDED_ALLOW_IPS` | (none) | Address (or CIDR) of your reverse proxy. Only requests from it may set the client IP with `X-Forwarded-For`. See [HTTPS behind a reverse proxy](#https-behind-a-reverse-proxy) |
 | `DOCKER_HOST` | the local socket | Where Docker is, e.g. a socket proxy (`tcp://socket-proxy:2375`) |
 | `DOCKER_CONFIG` | (none) | Folder with a Docker `config.json`, for pulling from private registries |
 | `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |
