@@ -1,0 +1,382 @@
+/* MAGI theme: a dark NERV-style console. Picked in the UI (see lib/theme.js) and
+   applied as <html data-theme="magi">. Everything here is scoped to that
+   attribute, so the neutral theme is untouched.
+
+   Same rules as the rest of the app: status is never colour alone (labels stay),
+   focus outlines stay visible, and animation stops for prefers-reduced-motion.
+   No external images or fonts: the hex grid is an inline SVG (the CSP allows
+   data: images), the font is bundled. */
+
+[data-theme="magi"] {
+  --bg: #050403;
+  --surface: #0c0906;
+  --text: #ffad42;
+  --muted: #c98a3e;
+  --border: #6b3c0c;
+  --line: #ff8a00;
+  --field: #070504;
+  --accent: #ff8a00;
+  --accent-text: #050403;
+  --ok: #4dff88;
+  --bad: #ff4848;
+  --bad-bg: #2a0806;
+  --info-bg: #1c1206;
+  --code-bg: #1a1108;
+  --warn: #ffd23f;
+  --hover: #1d1309;
+  --active: #33200b;
+  --log-bg: #030202;
+  --src-0: #4dff88;
+  --src-1: #5fd8ff;
+  --src-2: #ff6fae;
+  --src-3: #ffd23f;
+  --src-4: #b9a1ff;
+  --src-5: #ff9d2e;
+  --cut: 12px;
+  --hazard: repeating-linear-gradient(-45deg, var(--warn) 0 8px, #050403 8px 16px);
+
+  color-scheme: dark;
+  font-family: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+[data-theme="magi"] ::selection {
+  color: #050403;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------ backdrop */
+
+/* Faint hex grid behind everything. */
+[data-theme="magi"] body {
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66v34' fill='none' stroke='%23ff8a00' stroke-opacity='.07'/%3E%3C/svg%3E");
+}
+
+/* CRT scanlines over the whole screen. They never catch clicks. */
+[data-theme="magi"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.16) 2px 3px);
+}
+
+/* ------------------------------------------------------------ type */
+
+[data-theme="magi"] h1,
+[data-theme="magi"] h2,
+[data-theme="magi"] .brand,
+[data-theme="magi"] .brand-mark,
+[data-theme="magi"] .c-head,
+[data-theme="magi"] .h-head,
+[data-theme="magi"] button,
+[data-theme="magi"] label,
+[data-theme="magi"] .badge,
+[data-theme="magi"] .tag,
+[data-theme="magi"] .topbar-link,
+[data-theme="magi"] .live-state,
+[data-theme="magi"] .term-recorded {
+  font-family: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+[data-theme="magi"] h1 {
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--line);
+}
+
+[data-theme="magi"] h2 {
+  font-weight: 700;
+}
+
+/* "■ LOGS", "■ TERMINAL": console section markers. */
+[data-theme="magi"] h2::before {
+  content: "■ " / "";
+  color: var(--line);
+}
+
+[data-theme="magi"] .muted,
+[data-theme="magi"] .c-head,
+[data-theme="magi"] .h-head {
+  color: var(--muted);
+}
+
+[data-theme="magi"] code,
+[data-theme="magi"] .port {
+  color: var(--text);
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------ angled panels */
+
+[data-theme="magi"] .card,
+[data-theme="magi"] .containers,
+[data-theme="magi"] .job,
+[data-theme="magi"] .confirm,
+[data-theme="magi"] .h-table {
+  position: relative;
+  border-color: var(--border);
+  border-radius: 0;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--cut)) 0,
+    100% var(--cut),
+    100% 100%,
+    var(--cut) 100%,
+    0 calc(100% - var(--cut))
+  );
+}
+
+/* A bright edge along the top of each panel. */
+[data-theme="magi"] .card,
+[data-theme="magi"] .containers,
+[data-theme="magi"] .h-table {
+  border-top: 2px solid var(--line);
+}
+
+[data-theme="magi"] .log-box,
+[data-theme="magi"] .term-box,
+[data-theme="magi"] .job-output,
+[data-theme="magi"] .editor-box,
+[data-theme="magi"] .keystrokes pre {
+  border-color: var(--border);
+  border-radius: 0;
+  box-shadow: inset 0 0 24px rgba(255, 138, 0, 0.06);
+}
+
+/* ------------------------------------------------------------ login card */
+
+[data-theme="magi"] .card {
+  max-width: 460px;
+  padding-top: 40px;
+  background: linear-gradient(180deg, rgba(255, 138, 0, 0.06), transparent 120px), var(--surface);
+}
+
+/* Header band of the access screen. */
+[data-theme="magi"] .card::before {
+  content: "MAGI SYSTEM // ACCESS TERMINAL" / "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: #050403;
+  background: var(--line);
+}
+
+[data-theme="magi"] .brand {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--line);
+}
+
+[data-theme="magi"] .card-foot {
+  border-top-color: var(--border);
+}
+
+/* ------------------------------------------------------------ top bar */
+
+[data-theme="magi"] .topbar {
+  background: var(--surface);
+  border-bottom: 2px solid var(--line);
+  box-shadow: 0 3px 0 -1px var(--border);
+}
+
+[data-theme="magi"] .brand-mark {
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.25em;
+  color: var(--line);
+}
+
+[data-theme="magi"] .brand-mark::after {
+  content: " // MAGI SYSTEM" / "";
+  font-weight: 500;
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+}
+
+[data-theme="magi"] .sidebar {
+  background: rgba(12, 9, 6, 0.92);
+  border-right: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------ controls */
+
+[data-theme="magi"] button,
+[data-theme="magi"] input,
+[data-theme="magi"] select {
+  border-radius: 0;
+}
+
+[data-theme="magi"] input,
+[data-theme="magi"] select {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme="magi"] input:focus-visible,
+[data-theme="magi"] select:focus-visible,
+[data-theme="magi"] button:focus-visible,
+[data-theme="magi"] a:focus-visible {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+}
+
+[data-theme="magi"] button {
+  font-weight: 700;
+}
+
+[data-theme="magi"] button.secondary {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme="magi"] button.secondary:hover:not(:disabled) {
+  color: var(--line);
+  border-color: var(--line);
+  background: var(--hover);
+}
+
+[data-theme="magi"] button:not(.secondary):hover:not(:disabled) {
+  box-shadow: 0 0 12px rgba(255, 138, 0, 0.45);
+}
+
+/* Dangerous actions get hazard stripes. */
+[data-theme="magi"] button.danger {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: repeating-linear-gradient(-45deg, rgba(255, 72, 72, 0.16) 0 6px, transparent 6px 12px);
+}
+
+[data-theme="magi"] button.danger:not(.secondary) {
+  color: #fff;
+  background: repeating-linear-gradient(-45deg, #c81e1e 0 8px, #9c1010 8px 16px);
+}
+
+/* Confirmations carry a warning band across the top. */
+[data-theme="magi"] .confirm {
+  padding-top: 20px;
+  border-left-width: 1px;
+}
+
+[data-theme="magi"] .confirm::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 8px;
+  background: var(--hazard);
+}
+
+[data-theme="magi"] .confirm.saved::before {
+  background: var(--ok);
+}
+
+[data-theme="magi"] .job {
+  border-left-width: 4px;
+}
+
+[data-theme="magi"] .notice {
+  border-radius: 0;
+  border-left: 3px solid var(--line);
+}
+
+[data-theme="magi"] .notice.error {
+  border-left-color: var(--bad);
+}
+
+[data-theme="magi"] .back-link,
+[data-theme="magi"] .h-row a {
+  color: var(--line);
+}
+
+/* ------------------------------------------------------------ status */
+
+[data-theme="magi"] .stack-item {
+  border-radius: 0;
+  border-left: 2px solid transparent;
+}
+
+[data-theme="magi"] .stack-item.active {
+  color: var(--line);
+  border-left-color: var(--line);
+}
+
+[data-theme="magi"] .dot {
+  border-radius: 0;
+}
+
+[data-theme="magi"] .dot.running {
+  box-shadow: 0 0 6px var(--ok);
+}
+
+[data-theme="magi"] .dot.unhealthy {
+  box-shadow: 0 0 6px var(--bad);
+  animation: magi-alert 1s steps(2, jump-none) infinite;
+}
+
+[data-theme="magi"] .badge,
+[data-theme="magi"] .tag,
+[data-theme="magi"] .health,
+[data-theme="magi"] .term-recorded {
+  border-radius: 0;
+}
+
+[data-theme="magi"] .badge {
+  border: 1px solid currentColor;
+  background: transparent;
+}
+
+[data-theme="magi"] .badge.bad {
+  background: var(--bad-bg);
+  animation: magi-alert 1s steps(2, jump-none) infinite;
+}
+
+[data-theme="magi"] .live-state.live::before {
+  content: "● " / "";
+  animation: magi-alert 1.6s steps(2, jump-none) infinite;
+}
+
+[data-theme="magi"] .spinner {
+  border-radius: 0;
+  border-color: var(--border);
+  border-top-color: var(--line);
+}
+
+@keyframes magi-alert {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="magi"] .dot.unhealthy,
+  [data-theme="magi"] .badge.bad,
+  [data-theme="magi"] .live-state.live::before {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------ narrow screens */
+
+@media (max-width: 760px) {
+  [data-theme="magi"] .brand-mark::after {
+    content: none;
+  }
+
+  [data-theme="magi"] .brand-mark {
+    letter-spacing: 0.12em;
+  }
+
+  [data-theme="magi"] .topbar-link,
+  [data-theme="magi"] .topbar button {
+    letter-spacing: 0.04em;
+  }
+}

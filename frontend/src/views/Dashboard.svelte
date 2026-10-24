@@ -1,4 +1,5 @@
 <script>
+  import ThemePicker from "../lib/ThemePicker.svelte";
   import Notice from "../lib/Notice.svelte";
   import StackList from "../lib/StackList.svelte";
   import StackView from "../lib/StackView.svelte";
@@ -134,6 +135,7 @@
     <span class="brand-mark">QuenWard</span>
     <span class="topbar-spacer"></span>
     <a class="topbar-link" class:active={history !== null} href="#/terminals">Terminal history</a>
+    <ThemePicker />
     <span class="muted user">{session.username}</span>
     <button type="button" class="secondary small" onclick={doLogout} disabled={busy}>Log out</button>
   </header>

@@ -3,6 +3,7 @@
   import Notice from "./Notice.svelte";
   import { getTranscript } from "./api.js";
   import { FONT, adoptStyles, base64ToBytes, loadXterm, themeFromCss } from "./xterm.js";
+  import { onThemeChange } from "./theme.js";
 
   let { id, onExpired } = $props();
 
@@ -90,8 +91,13 @@
       loading = false;
     })();
 
+    const stopTheme = onThemeChange(() => {
+      if (term) term.options.theme = themeFromCss();
+    });
+
     return () => {
       closed = true;
+      stopTheme();
       term?.dispose();
       release?.();
     };

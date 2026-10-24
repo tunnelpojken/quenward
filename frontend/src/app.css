@@ -1,4 +1,4 @@
-/* Neutral base theme. The MAGI theme and the theme switch come in Phase 6. */
+/* Neutral theme: follows the system light / dark mode. The MAGI theme is in magi.css. */
 :root {
   --bg: #f6f7f9;
   --surface: #ffffff;
@@ -1042,4 +1042,33 @@ button.danger:not(.secondary) {
 
 .edit-problem button {
   margin-top: 8px;
+}
+
+/* ------------------------------------------------------------ theme switch (Phase 6) */
+
+.theme-picker select {
+  padding: 4px 6px;
+  font-size: 0.85rem;
+}
+
+.card-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* Top bar items never break mid-word; on a phone they wrap as whole items. */
+.topbar {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.topbar > * {
+  white-space: nowrap;
 }

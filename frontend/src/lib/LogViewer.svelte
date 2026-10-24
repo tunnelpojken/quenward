@@ -137,7 +137,7 @@
   {/if}
   <div class="log-box" class:wrap bind:this={box} onscroll={onScroll} tabindex="0" role="log" aria-live="off">
     {#each shown as line (line.k)}
-      <div class="ln"><span class="ts">{clock(line.t)}</span><span class="src {sourceClass(line.s)}">{line.s}</span><span class="msg">{line.m}</span></div>
+      <div class="ln"><span class="ts">{clock(line.t)}</span><span class="src {sourceClass(line.s, services)}">{line.s}</span><span class="msg">{line.m}</span></div>
     {:else}
       <p class="muted log-empty">{status === "live" || status === "ended" ? (filter ? "No line matches the filter." : "No log output yet.") : ""}</p>
     {/each}

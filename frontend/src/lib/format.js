@@ -30,8 +30,12 @@ export function clock(iso) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-// Same service -> same colour class, across reloads.
-export function sourceClass(name) {
+// Same service -> same colour class, across reloads. The stack's services get
+// distinct colours by their sorted position (the first six never share one); a
+// name not in the list falls back to a hash of the name.
+export function sourceClass(name, services = []) {
+  const index = [...services].sort().indexOf(name);
+  if (index !== -1) return `src-${index % 6}`;
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return `src-${hash % 6}`;

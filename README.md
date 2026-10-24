@@ -55,6 +55,12 @@ them in the dashboard:
 (cd dev-stacks/oneshot && docker compose up -d)
 ```
 
+## Themes
+
+Pick a theme in the top bar (or under the login form). **Neutral** follows your
+system's light or dark mode; **MAGI** is a dark NERV-style console. The choice
+is remembered per browser, not per account.
+
 ## Docker access
 
 **Access to the Docker socket is root access to the host.** Anyone who can use
