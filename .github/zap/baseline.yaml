@@ -1,0 +1,44 @@
+# ZAP baseline (passive) scan of the running container, used by CI.
+# It requests the app's pages and API, follows links, and checks every response
+# (headers, cookies, CSP, error pages...) without attacking anything.
+# The run fails on any Medium or High alert; Low and Info are only reported.
+env:
+  contexts:
+    - name: app
+      urls:
+        - http://127.0.0.1:5005/
+      includePaths:
+        - http://127.0.0.1:5005.*
+  parameters:
+    failOnError: true
+    progressToStdout: true
+jobs:
+  - type: requestor
+    requests:
+      - url: http://127.0.0.1:5005/healthz
+      - url: http://127.0.0.1:5005/api/setup/status
+      - url: http://127.0.0.1:5005/api/session
+      - url: http://127.0.0.1:5005/api/stacks
+      - url: http://127.0.0.1:5005/api/terminal-sessions
+      - url: http://127.0.0.1:5005/does-not-exist
+      - url: http://127.0.0.1:5005/api/does-not-exist
+  - type: spider
+    parameters:
+      context: app
+      maxDuration: 1
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 2
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: zap-baseline
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: ${ZAP_REPORT_DIR}
+      reportFile: zap-baseline
+  - type: exitStatus
+    parameters:
+      errorLevel: Medium
