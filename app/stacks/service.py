@@ -93,6 +93,29 @@ def _self_stack(gateway: DockerGateway, matched: dict[str, list[ContainerSummary
     return None
 
 
+def _self_project(gateway: DockerGateway, containers: list[ContainerSummary]) -> str | None:
+    """The compose project the app's own container belongs to."""
+    self_id = gateway.self_container_id()
+    if not self_id:
+        return None
+    for c in containers:
+        if c.id == self_id:
+            return c.project
+    return None
+
+
+def app_project(gateway: DockerGateway) -> str | None:
+    """The compose project of the app's own container, if it runs under compose."""
+    return _self_project(gateway, gateway.compose_containers())
+
+
+def compose_project(stack: Stack, containers: tuple[ContainerSummary, ...]) -> str:
+    """The project name actions run with: the one the containers were created
+    with if there are any (and they agree), otherwise the compose file's."""
+    projects = {c.project for c in containers if c.project}
+    return projects.pop() if len(projects) == 1 else stack.project
+
+
 @dataclass(frozen=True)
 class Overview:
     stacks: list[StackState]
@@ -101,15 +124,21 @@ class Overview:
 
 def overview(settings: Any, gateway: DockerGateway) -> Overview:
     stacks = discover(settings.stacks_dir)
-    matched, elsewhere = _match(stacks, gateway.compose_containers())
+    containers = gateway.compose_containers()
+    matched, elsewhere = _match(stacks, containers)
     self_name = _self_stack(gateway, matched)
-    return Overview(
-        stacks=[
-            StackState(stack=stacks[n], containers=tuple(matched[n]), is_self=n == self_name)
-            for n in stacks
-        ],
-        started_elsewhere=elsewhere,
-    )
+    self_project = _self_project(gateway, containers)
+    states = []
+    for n in stacks:
+        mine = tuple(matched[n])
+        # Read-only: the app's own stack, and any other stack that would run
+        # compose with the app's project name (a copied compose file, or a
+        # `name:` set to it), which would stop or recreate the app itself.
+        is_self = n == self_name or (
+            self_project is not None and compose_project(stacks[n], mine) == self_project
+        )
+        states.append(StackState(stack=stacks[n], containers=mine, is_self=is_self))
+    return Overview(stacks=states, started_elsewhere=elsewhere)
 
 
 def get_stack(settings: Any, gateway: DockerGateway, name: str) -> StackState:

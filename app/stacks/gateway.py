@@ -180,6 +180,10 @@ def _unavailable(error: BaseException) -> DockerUnavailable:
     return DockerUnavailable("Docker is not reachable")
 
 
+def _in_container() -> bool:
+    return Path("/.dockerenv").exists()
+
+
 class DockerGateway:
     def __init__(self, timeout: int = 10) -> None:
         self._timeout = timeout
@@ -228,14 +232,22 @@ class DockerGateway:
 
     def self_container_id(self) -> str | None:
         """The id of the container this app runs in, or None when not in a container."""
-        if not self._self_checked:
-            self._self_checked = True
-            if Path("/.dockerenv").exists():
-                try:
-                    # Docker sets the hostname to the container id unless told otherwise.
-                    self._self_id = self.inspect(socket.gethostname())["id"]
-                except (docker.errors.NotFound, DockerUnavailable):
-                    self._self_id = os.environ.get("SELF_CONTAINER_ID") or None
+        if self._self_checked:
+            return self._self_id
+        fallback = os.environ.get("SELF_CONTAINER_ID") or None
+        if not _in_container():
+            self._self_id, self._self_checked = None, True
+            return None
+        try:
+            # Docker sets the hostname to the container id unless told otherwise.
+            self._self_id = self.inspect(socket.gethostname())["id"]
+        except docker.errors.NotFound:
+            self._self_id = fallback
+        except DockerUnavailable:
+            # Not remembered: a passing hiccup must not leave the app unable to
+            # recognise its own stack (and so willing to stop itself) for good.
+            return fallback
+        self._self_checked = True
         return self._self_id
 
     def history(self, container_id: str, tail: int, until: float) -> bytes:

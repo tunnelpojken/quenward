@@ -3,13 +3,20 @@
 Failures are counted per username AND per client IP within a sliding window.
 Crossing a limit locks that key for a while. Counting usernames that do not
 exist the same way as real ones means a lockout never reveals which exist.
-The state is in memory: an attacker cannot restart the container to reset it,
-and a restart by the owner clearing locks is acceptable.
+The state is in memory, so a restart clears it. That is why nothing reachable
+without logging in may be able to crash the app (see body_limit.py and the
+limit on parallel password checks in passwords.py).
+
+A login attempt is reserved with begin() BEFORE the password is checked, and
+released with end() after. Attempts still being checked count towards the
+limit, so a burst of parallel requests cannot all slip past it while the slow
+password check runs.
 """
 
 import threading
 from collections import deque
 from datetime import datetime, timedelta
+from typing import Literal
 
 from app import clock
 
@@ -30,6 +37,8 @@ class LoginLimiter:
         self.lockout = lockout
         self._failures: dict[str, deque[datetime]] = {}
         self._locked_until: dict[str, datetime] = {}
+        self._in_flight: dict[str, int] = {}
+        self._reported: dict[str, datetime] = {}  # key -> the lock it was reported for
         self._lock = threading.Lock()
 
     @staticmethod
@@ -47,6 +56,46 @@ class LoginLimiter:
                 if until and until > now:
                     return True
             return False
+
+    def begin(
+        self, username: str | None, ip: str | None
+    ) -> Literal["ok", "locked_first", "locked", "busy"]:
+        """Reserve an attempt. Only "ok" may go on to check the password, and must
+        then call end() with the same arguments.
+
+        "locked_first" is the first refusal during a lock (worth recording once),
+        "locked" any later one, "busy" too many attempts already being checked.
+        """
+        now = clock.now()
+        keys = self._keys(username, ip)
+        with self._lock:
+            refusal: Literal["locked_first", "locked"] | None = None
+            for _, key in keys:
+                until = self._locked_until.get(key)
+                if until and until > now:
+                    refusal = refusal or "locked"
+                    if self._reported.get(key) != until:
+                        self._reported[key] = until
+                        refusal = "locked_first"
+            if refusal:
+                return refusal
+            for kind, key in keys:
+                limit = self.max_per_user if kind == "user" else self.max_per_ip
+                recent = sum(1 for t in self._failures.get(key, ()) if now - t <= self.window)
+                if recent + self._in_flight.get(key, 0) >= limit:
+                    return "busy"
+            for _, key in keys:
+                self._in_flight[key] = self._in_flight.get(key, 0) + 1
+            return "ok"
+
+    def end(self, username: str | None, ip: str | None) -> None:
+        with self._lock:
+            for _, key in self._keys(username, ip):
+                left = self._in_flight.get(key, 0) - 1
+                if left > 0:
+                    self._in_flight[key] = left
+                else:
+                    self._in_flight.pop(key, None)
 
     def record_failure(self, username: str | None, ip: str | None) -> list[str]:
         """Count a failure. Returns the kinds ('user', 'ip') that just became locked."""
@@ -76,5 +125,7 @@ class LoginLimiter:
             return
         for key in [k for k, until in self._locked_until.items() if until <= now]:
             del self._locked_until[key]
+        for key in [k for k, until in self._reported.items() if until <= now]:
+            del self._reported[key]
         for key in [k for k, f in self._failures.items() if not f or now - f[-1] > self.window]:
             del self._failures[key]

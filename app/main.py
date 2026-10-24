@@ -11,6 +11,7 @@ import os
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -22,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from app import alerts, db
 from app.auth import sessions
 from app.auth.ratelimit import LoginLimiter
+from app.body_limit import BodyLimitMiddleware
 from app.config import Settings
 from app.routes import auth as auth_routes
 from app.routes import stacks as stack_routes
@@ -140,6 +142,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.transcript_key = transcript_key
     app.state.jobs = JobManager(settings, lambda: app.state.docker)
     app.state.setup_token = None
+    # Added first, so it sits inside the security headers: its 413 gets them too.
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     @app.exception_handler(RequestValidationError)
@@ -168,14 +172,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
+def _listen_address() -> str:
+    """All interfaces inside a container (the compose port binding decides what is
+    reachable); only this machine when run directly, e.g. during development."""
+    if os.environ.get("HOST"):
+        return os.environ["HOST"]
+    if Path("/.dockerenv").exists():
+        return "0.0.0.0"  # noqa: S104  # nosec B104
+    return "127.0.0.1"
+
+
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
     settings = Settings.from_env()
+    # X-Forwarded-For is only read when FORWARDED_ALLOW_IPS names the proxy.
+    # uvicorn would otherwise trust it from 127.0.0.1, so anything sharing the
+    # container's network (a sidecar) could pick the IP it appears to come from.
+    forwarded = os.environ.get("FORWARDED_ALLOW_IPS", "").strip()
     uvicorn.run(
         create_app(settings),
-        # Inside the container; real exposure is decided by the compose port binding.
-        host="0.0.0.0",  # noqa: S104  # nosec B104
+        host=_listen_address(),
         port=settings.port,
+        proxy_headers=bool(forwarded),
+        forwarded_allow_ips=forwarded or None,
+        # WebSocket messages are small (terminal input is capped at 64 KiB).
+        ws_max_size=1024 * 1024,
         server_header=False,
         date_header=False,
         log_level="info",

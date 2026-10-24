@@ -206,8 +206,9 @@ class JobManager:
 
     def _project(self, state: StackState) -> str:
         """Use the project name the containers were created with, if there are any."""
-        projects = {c.project for c in state.containers if c.project}
-        return projects.pop() if len(projects) == 1 else state.stack.project
+        from app.stacks import service  # late import: service imports nothing from here
+
+        return service.compose_project(state.stack, state.containers)
 
     def _compose(
         self, job: Job, state: StackState, base: list[str], command: list[str], step: str
