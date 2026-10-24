@@ -1,0 +1,83 @@
+# The app behind its own Caddy, with a certificate from Let's Encrypt via a
+# Cloudflare DNS challenge. See "HTTPS behind a reverse proxy" in the README.
+#
+# Replace stacks.example.com, the stacks path, and the port if 8443 is taken.
+# Meant for your LAN or VPN only: no port forward, no public tunnel.
+
+services:
+  app:
+    image: docker-project:latest   # built from the repository: docker build -t docker-project .
+    container_name: stack-manager
+    restart: unless-stopped
+    ports:
+      # Not needed through Caddy. Kept for access over an SSH tunnel if Caddy is down:
+      #   ssh -L 5005:127.0.0.1:5005 you@server
+      - "127.0.0.1:5005:5005"
+    environment:
+      STACKS_DIR: /home/you/docker
+      # The first one is used for password reset links.
+      ALLOWED_ORIGINS: https://stacks.example.com:8443,http://127.0.0.1:5005
+      # Take the client's IP from X-Forwarded-For only from this Caddy (its fixed
+      # address below). From anyone else the header could be faked, and the login
+      # rate limit and the audit log would see whatever IP an attacker chose.
+      FORWARDED_ALLOW_IPS: 10.46.33.2
+      # Optional, see "Terminal" in the README.
+      # TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
+    group_add:
+      - "${DOCKER_GID:?Set DOCKER_GID in .env first}"
+    volumes:
+      - data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same path as on the host, see "Docker access" in the README.
+      - /home/you/docker:/home/you/docker
+      # - ./secrets/transcript.key:/run/secrets/transcript.key:ro
+    networks:
+      default:
+        ipv4_address: 10.46.33.3
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+
+  caddy:
+    image: caddy-cloudflare:local   # built from ./caddy-image
+    container_name: stack-manager-caddy
+    restart: unless-stopped
+    # Its own user, not the app's: Caddy can read the Cloudflare token and the
+    # app cannot, and the app's secrets are unreadable to Caddy.
+    user: "46338:46338"
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./secrets/cloudflare_token:/run/secrets/cloudflare_token:ro
+      - ./caddy/data:/data        # certificates and their private keys
+      - ./caddy/config:/config
+    networks:
+      default:
+        ipv4_address: 10.46.33.2
+    depends_on:
+      - app
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+
+networks:
+  default:
+    ipam:
+      config:
+        # Fixed addresses, so FORWARDED_ALLOW_IPS names exactly one container.
+        # Pick a range no other network on the machine uses.
+        - subnet: 10.46.33.0/29
+
+volumes:
+  data:

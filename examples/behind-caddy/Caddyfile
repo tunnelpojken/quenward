@@ -1,0 +1,29 @@
+# HTTPS for the stack manager, on port 8443 only.
+{
+	# Nothing may reconfigure this Caddy while it runs.
+	admin off
+	# Only 8443 is published; no redirect listener on port 80.
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
+}
+
+stacks.example.com:8443 {
+	tls {
+		# Certificate via a DNS challenge: a temporary TXT record created through
+		# Cloudflare's API. Works without the server being reachable from the
+		# internet. The token is read from a file, never the environment.
+		dns cloudflare {file./run/secrets/cloudflare_token}
+		# Check the challenge record on public DNS, not through a local resolver
+		# (Pi-hole, a router) that may answer the name itself.
+		resolvers 1.1.1.1 1.0.0.1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	reverse_proxy app:5005
+}
