@@ -170,7 +170,7 @@
       {#if file.self}
         This is the stack this app runs in. It stays read-only here: change it over SSH.
       {:else}
-        The app may not write this file. See "Compose editor" in the README to allow it.
+        The app may not write this file. See docs/compose-editor.md in the QuenWard repository to allow it.
       {/if}
     </p>
   {/if}

@@ -14,3 +14,6 @@ frontend/dist
 README.md
 compose*.yaml
 dev-stacks
+SECURITY.md
+docs
+examples

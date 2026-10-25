@@ -1,404 +1,173 @@
 # QuenWard
 
-A self-hosted web UI for managing Docker Compose stacks: live logs,
-start / stop / update, an exec terminal and a compose editor, behind hardened
-authentication. See the build draft for the full design.
+**A web dashboard for the Docker Compose stacks on your home server.** See what's
+running, read the logs, start, stop and update stacks, open a terminal in a
+container and edit compose files, all from the browser, behind a proper login.
 
-**Status: Phase 6 (hardening before a first release).** Stacks, live logs, start /
-stop / restart / update, an interactive terminal into containers, and editing
-compose files. Meant for your LAN or VPN only, behind HTTPS: see
-[HTTPS behind a reverse proxy](#https-behind-a-reverse-proxy) and
-[SECURITY.md](SECURITY.md). Never expose it to the internet.
+QuenWard is built for a homelab: one server, a handful of stacks in a folder,
+used from your home network or VPN. It puts security first, because whoever
+can use it controls the server.
 
-## Requirements
+| Neutral theme | MAGI theme |
+| --- | --- |
+| ![The dashboard in the neutral theme: a list of stacks on the left, the selected stack's containers and live logs on the right](docs/images/dashboard-neutral.png) | ![The same dashboard in the MAGI theme: amber on black, with a terminal open in a container](docs/images/dashboard-magi.png) |
 
-- [uv](https://docs.astral.sh/uv/) (installs the pinned Python 3.13 by itself)
-- Node.js 24+ and npm
-- Docker with the compose plugin
+> **Status:** 0.1, a first release. It works and is in daily use, but expect
+> changes before 1.0.
 
-## Development
+## What it does
 
-Backend:
+- **Every stack at a glance:** all the stacks in your stacks folder, running or
+  not, with their containers, ports, health and restarts.
+- **Live logs** from all services of a stack, colour-coded, with a filter.
+- **Start, stop, restart and update** a stack with one click, with the output
+  shown live. Update keeps the previous version of each image, in case an
+  update breaks something and you need to
+  [go back](docs/stacks.md#stack-actions).
+- **A terminal** in any running container, right in the browser.
+- **Edit compose files** with checks before saving, so a typo can't break a
+  stack, and a backup of the previous version.
+- **Two themes:** a neutral one that follows your light or dark mode, and MAGI,
+  a NERV-style console.
+
+## Before you start: is it safe?
+
+QuenWard needs access to Docker on your server, and **access to Docker is the
+same as full control of the server**. Anyone who can log in to QuenWard could
+use it to read or change any file on the machine. That is why:
+
+- **Only use it on your home network or over a VPN.** Never make it reachable
+  from the internet: no port forwarding, no public tunnels.
+- **Use a strong password.** QuenWard refuses short and common ones, and locks
+  logins after repeated failures.
+- **Serve it over HTTPS** once you've tried it out
+  ([how](docs/https.md)). Browsers won't keep you logged in over plain HTTP
+  except on the machine itself.
+
+QuenWard itself is hardened: it runs as a normal user, not root, with a
+read-only file system, and never sends passwords or secrets from your
+containers to the browser. Every version is scanned for known vulnerabilities.
+The details are in [SECURITY.md](SECURITY.md).
+
+## Quick start
+
+You need a Linux server (x86-64, or 64-bit ARM like a Raspberry Pi 4 or 5) with
+Docker and the Docker Compose plugin. The steps below assume your stacks live
+in `/home/you/docker`, one folder per stack. Replace that with your own path
+everywhere.
+
+**1. Make a folder for QuenWard next to your other stacks:**
 
 ```bash
-uv sync                                  # create .venv from uv.lock
-DATA_DIR=$PWD/data uv run python -m app.main
-# -> http://127.0.0.1:5005/healthz
+mkdir -p /home/you/docker/quenward
+cd /home/you/docker/quenward
 ```
 
-Frontend with hot reload (in a second terminal). The backend must then accept
-the dev server's address, so start it with:
-
-```bash
-ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173 DATA_DIR=$PWD/data uv run python -m app.main
-cd frontend
-npm install
-npm run dev                              # -> http://127.0.0.1:5173
-```
-
-To have the backend serve the built frontend instead, run `npm run build` once;
-the app picks up `frontend/dist` automatically.
-
-Everything in a container (it needs your Docker socket's group id once):
+**2. Tell it which group can use Docker on your server:**
 
 ```bash
 echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
-docker compose -f compose.dev.yaml up --build -d
-# -> http://127.0.0.1:5005
 ```
 
-The dev container shows the sample stacks in `dev-stacks/`. Start some to see
-them in the dashboard:
-
-```bash
-(cd dev-stacks/demo && docker compose up -d)
-(cd dev-stacks/oneshot && docker compose up -d)
-```
-
-## Themes
-
-Pick a theme in the top bar (or under the login form). **Neutral** follows your
-system's light or dark mode; **MAGI** is a dark NERV-style console. The choice
-is remembered per browser, not per account.
-
-## Docker access
-
-**Access to the Docker socket is root access to the host.** Anyone who can use
-this app can start containers that read any file on the machine, or open a
-terminal in one that does. That is why login comes first, why the app is meant for LAN / VPN use
-only, and why it runs as an unprivileged user that reaches the socket only
-through the socket's group (`group_add` with `DOCKER_GID`).
-
-**Mount the stacks folder at the same path as on the host**, for example
-`/home/fested/docker:/home/fested/docker`. Compose records on every container
-the folder it was started from, and that is how containers are matched to their
-stack. A project with the same name started from another folder is a different
-stack; the dashboard shows a hint when it finds one. Folders and compose files
-that are symlinks are ignored.
-
-**What the browser never receives:** environment variables, labels, commands,
-entrypoints, healthcheck commands and their output. Container details are built
-from an explicit list of safe fields. Log lines are shown as plain text.
-
-## HTTPS behind a reverse proxy
-
-The session cookie is `Secure`, so browsers only send it over HTTPS or to
-`localhost`. To use the app from another machine, put it behind a reverse proxy
-with a real certificate. [`examples/behind-caddy/`](examples/behind-caddy/) is a
-complete, working setup: the app plus its own Caddy, in one compose file.
-
-**Why its own Caddy.** The app is not something to share a proxy with a public
-website. A separate Caddy, on its own port, has no route from your public sites
-or tunnels to the app, and a mistake in one config cannot expose the other.
-
-**The certificate comes from a DNS challenge**, so the server does not have to be
-reachable from the internet. Caddy creates a temporary TXT record through your
-DNS provider's API and Let's Encrypt checks it. The example uses Cloudflare:
-
-1. Your domain's DNS must be on Cloudflare. Create an API token with
-   **Zone → DNS → Edit** and **Zone → Zone → Read**, for that zone only.
-2. Save it in a file only Caddy's user can read (never in the environment, where
-   `docker inspect` shows it):
-
-   ```bash
-   mkdir -p secrets caddy/data caddy/config
-   nano secrets/cloudflare_token          # paste the token, save
-   sudo chown 46338:46338 secrets/cloudflare_token caddy/data caddy/config
-   sudo chmod 400 secrets/cloudflare_token
-   ```
-
-3. Point the name at the server **on your local DNS only** (Pi-hole, your router),
-   not in public DNS. For example `stacks.example.com → 192.168.0.37`. A public
-   record is not needed for the certificate, and leaving it out keeps the name
-   from leading anywhere outside your network.
-4. Build Caddy with the Cloudflare module, then start everything:
-
-   ```bash
-   docker build -t caddy-cloudflare:local caddy-image
-   echo "DOCKER_GID=$(stat -c %g /var/run/docker.sock)" > .env
-   docker compose up -d
-   docker logs -f quenward-caddy     # "certificate obtained successfully"
-   ```
-
-Then open `https://stacks.example.com:8443`.
-
-Things the example does on purpose, and that matter if you build your own:
-
-- **`ALLOWED_ORIGINS` must list the HTTPS address** exactly as typed in the
-  browser, port included. Logins and actions from any other origin are refused.
-- **`FORWARDED_ALLOW_IPS` names the proxy, and only the proxy.** The app then
-  takes the client's IP from `X-Forwarded-For`, which the login rate limit, the
-  security alerts and the audit log use. Trusting it from anywhere else lets
-  anyone pick the IP they appear to come from. The example gives Caddy a fixed
-  address on a small network for this. A CIDR range works too, but keep it to
-  networks only the proxy is on. Leave it unset without a proxy.
-- **Caddy runs as its own user** (46338), so it can read the Cloudflare token
-  and the app cannot, and the other way around for the app's secrets.
-- **`admin off`**: nothing can reconfigure Caddy while it runs.
-- **`setcap -r` in the Caddy image.** The official image gives the binary a
-  capability to bind ports below 1024. With `cap_drop: ALL` and
-  `no-new-privileges` it then refuses to start (`exec ... operation not
-  permitted`). Port 8443 needs no capability.
-- **`resolvers 1.1.1.1 1.0.0.1`**: Caddy checks the challenge record on public
-  DNS. A local resolver that answers the name itself (Pi-hole) would never show
-  the TXT record.
-
-**Using a proxy you already have** (Caddy, Traefik, nginx) works the same way:
-proxy to `app:5005` (WebSockets must be passed through, which Caddy and Traefik
-do by default), set `ALLOWED_ORIGINS` to the HTTPS address, and set
-`FORWARDED_ALLOW_IPS` to the proxy's address on the network it shares with the
-app. Do not route it through a public tunnel (Cloudflare Tunnel, ngrok) and do
-not forward its port on your router.
-
-**If the proxy is down**, the app is still reachable over an SSH tunnel through
-its `127.0.0.1` port binding:
-
-```bash
-ssh -L 5005:127.0.0.1:5005 you@server
-# then open http://127.0.0.1:5005 (keep it in ALLOWED_ORIGINS for this)
-```
-
-## Stack actions
-
-Start, Stop, Restart and Update run `docker compose` in the stack's folder, in
-the background, with the output shown live. Stop, Restart and Update ask first.
-
-- **One action per stack at a time**, and at most two overall (parallel pulls
-  are heavy on a small server).
-- **The app's own stack is read-only**: stopping it would cut you off mid-action.
-  Update it over SSH.
-- **Compose runs with a clean environment.** Compose fills `${VARIABLES}` from
-  its own environment before the stack's `.env`, so the app's settings would
-  otherwise leak into every stack.
-- **Every action is in the audit log**, with what changed. Command output is
-  shown but never stored there.
-
-**Update** pulls new images and recreates the containers that changed. Services
-with `build:` are skipped. The previous image of every service is kept, exactly
-one generation, using tags the app manages on your images:
-
-| Tag | Points at | Why |
-| --- | --- | --- |
-| `<repo>:current-<stack>-<service>` | the image the service runs | Keeps it alive if something else (Dockge, a manual `docker pull`) moves the main tag. On Docker's containerd image store an untagged image is deleted at once, even while in use. |
-| `<repo>:rollback-<stack>-<service>` | the image it ran before the last update | The kept previous version. The one before that is removed, unless another stack still uses it. |
-| `<repo>:pending-<stack>-<service>` | the running image, during an update only | Protects it while the update runs; removed afterwards. |
-
-The `current` tags are set whenever the app starts, restarts or updates a stack.
-For a stack the app has never touched, an update after an outside pull can
-report that the previous image could not be kept.
-
-**Private registries:** mount a Docker config with your credentials and point
-`DOCKER_CONFIG` at it, for example `~/.docker:/run/docker-config:ro` and
-`DOCKER_CONFIG=/run/docker-config`.
-
-## Terminal
-
-**Terminal** on a running container opens a shell inside it (`docker exec`):
-bash if the image has it, otherwise sh. Never a shell on the host. It is the most
-powerful thing in the app, so:
-
-- **Only running containers of a stack**, never the app's own stack.
-- **At most 2 terminals per login, 4 in total.**
-- **Closed after 15 minutes without typing.** Typing counts as activity for the
-  login session; an open terminal nobody types in does not keep you logged in.
-- **Closing the terminal ends the shell and everything started from it.** Docker
-  itself leaves an exec running when the connection drops, so the app ends the
-  shell's whole session (hangup, then kill a second later), background jobs and
-  `nohup` included. Processes that detach themselves completely (daemons calling
-  `setsid`) are left alone, as with `docker exec`. Shells left open when the app
-  stopped are ended at its next start.
-- **Opening and closing are in the audit log**, never what was typed.
-
-### Transcripts (optional, off by default)
-
-With a key, every terminal session is recorded (everything typed and shown,
-including what the screen hides, such as a password typed at a prompt) and kept
-for 14 days under **Terminal history**. Viewing one is audited.
-
-Transcripts are encrypted (AES-256-GCM) with a key that lives in a file, never in
-the database: a copy of the database alone reveals nothing of what was typed.
-Create the key once on the server:
-
-```bash
-mkdir -p secrets
-openssl rand -base64 32 > secrets/transcript.key
-sudo chown 46337 secrets/transcript.key && sudo chmod 400 secrets/transcript.key
-```
+**3. Create `compose.yaml` in that folder:**
 
 ```yaml
+services:
+  quenward:
+    image: ghcr.io/tunnelpojken/quenward:0.1
+    container_name: quenward
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5005:5005"   # only reachable from the server itself
     environment:
-      TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
+      STACKS_DIR: /home/you/docker
+    group_add:
+      - "${DOCKER_GID}"
     volumes:
-      - ./secrets/transcript.key:/run/secrets/transcript.key:ro
+      - data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Your stacks folder, at the same path inside as outside.
+      - /home/you/docker:/home/you/docker
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+
+volumes:
+  data:
 ```
 
-**Back up the key and the database separately**, never in the same place (for
-example: the database with the server's normal backups, the key in a password
-manager). Without the key, old transcripts cannot be read by anyone; with both
-together, they can. Changing the key makes older transcripts unreadable.
-
-## Compose editor
-
-Click a stack's compose file name to view and edit it. Saving:
-
-1. **Refuses if the file changed on disk** since you opened it (an edit over SSH
-   is never overwritten), and while an action runs on the stack.
-2. **Checks the YAML**, then runs **`docker compose config`** on the new text in
-   the stack's own folder, so relative paths and the stack's `.env` resolve
-   exactly as they will on start. Compose's own error message is shown.
-3. **Keeps the previous version as `compose.yaml.bak`** (one generation), then
-   writes the file **in place**, so it keeps its owner and permissions.
-
-Saving does not touch running containers: **Apply** (`docker compose up -d`)
-recreates the services that changed. `.env` files are never shown or edited, and
-the audit log records hashes and line counts, never the content (compose files
-often hold passwords). The app's own stack is shown read-only, and so is any stack that would run under
-the app's own compose project name (a copy of its compose file, or a `name:` set
-to it): starting or stopping it would act on the app itself. A save that would
-give a stack that name is refused. In compose's error messages, values from the
-stack's `.env` are replaced by `[value from .env]`.
-
-**Allowing the app to write.** The app runs as user 46337, and your compose files
-belong to you. Give it write access to the stack folders and compose files only,
-not to everything inside (stack data stays out of reach), with an ACL:
+**4. Start it:**
 
 ```bash
-sudo apt install acl   # if setfacl is missing
-cd /home/fested/docker
-for d in */; do
-  sudo setfacl -m u:46337:rwx "$d"                 # to create the .bak and a check file
-  for f in "$d"compose.yaml "$d"compose.yml "$d"docker-compose.yaml "$d"docker-compose.yml; do
-    [ -f "$f" ] && sudo setfacl -m u:46337:rw "$f"
-  done
-done
+docker compose up -d
 ```
 
-Run it again after adding a stack. Without write access the editor shows the file
-read-only. Some editors replace a file when saving (a new file without the ACL);
-if a stack turns read-only after an SSH edit, run the loop again.
-
-The stacks folder must be mounted without `:ro` for this.
-
-Why 46337: user IDs are shared between the host and every container. Many images
-run as 10001 or 1000, and a container with the same UID as this app could read
-and write what the app can (and the other way around). Check with
-`docker ps -q | xargs -n1 docker top | awk 'NR>1{print $1}' | sort -u` that no
-container of yours runs as 46337. To use another UID, build with
-`--build-arg APP_UID=...` and use that number in the commands above.
-
-## Checks (the same ones CI runs)
+**5. Open it.** On your own computer, connect to the server with an SSH tunnel
+and open the address it gives you:
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run bandit -c pyproject.toml -r app
-uv run pip-audit
-uv run pytest
-
-cd frontend && npm audit --audit-level=high && npm run build
+ssh -L 5005:127.0.0.1:5005 you@your-server
+# then open http://127.0.0.1:5005 in your browser
 ```
 
-CI also scans the built image: **Trivy** for known vulnerabilities (fails on
-fixable HIGH and CRITICAL; accepted exceptions are in `.trivyignore`, each with
-a reason and an expiry date) and a **ZAP** baseline scan of the running
-container (fails on Medium and High; the plan is `.github/zap/baseline.yaml`).
-
-Tests against a real Docker daemon run in CI (`docker-integration`) and are
-opt-in locally. They create throw-away stacks (busybox), start, stop, restart
-and update them, and remove everything afterwards:
+**6. Create your admin account.** The first time, QuenWard asks for a one-time
+setup code. It's printed in its log on the server:
 
 ```bash
-DOCKER_TESTS=1 uv run pytest tests/test_docker_integration.py
+docker logs quenward 2>&1 | grep "setup token"
 ```
 
-## Configuration
+Paste it in, choose a username and a password of at least 12 characters, and
+log in. QuenWard shows up in its own list as "this app", read-only, so you
+can't stop it from inside itself by accident.
 
-| Variable     | Default         | Meaning                               |
-| ------------ | --------------- | ------------------------------------- |
-| `DATA_DIR`   | `/data`         | SQLite database location              |
-| `STACKS_DIR` | `/stacks`       | Folder with one subfolder per stack   |
-| `STATIC_DIR` | `frontend/dist` | Built frontend                        |
-| `PORT`       | `5005`          | Listening port inside the container   |
-| `ALLOWED_ORIGINS` | `http://127.0.0.1:5005,http://localhost:5005` | Comma-separated URLs the UI is opened from. Logins and actions from any other origin are refused. Behind Caddy, set it to your HTTPS address. For `npm run dev`, add `http://127.0.0.1:5173,http://localhost:5173`. |
-| `FORWARDED_ALLOW_IPS` | (none) | Address (or CIDR) of your reverse proxy. Only requests from it may set the client IP with `X-Forwarded-For`. See [HTTPS behind a reverse proxy](#https-behind-a-reverse-proxy) |
-| `HOST`       | `0.0.0.0` in a container, else `127.0.0.1` | Address to listen on. Inside a container the compose port binding decides what is reachable |
-| `DOCKER_HOST` | the local socket | Where Docker is, e.g. a socket proxy (`tcp://socket-proxy:2375`) |
-| `DOCKER_CONFIG` | (none) | Folder with a Docker `config.json`, for pulling from private registries |
-| `NTFY_URL`   | (off)           | ntfy server for security alerts, e.g. `http://192.168.0.37:8085` |
-| `NTFY_TOPIC` | (off)           | Topic for the alerts. Use its own topic, not the one Diun uses |
-| `NTFY_TOKEN_FILE` | (off)      | Path to a file holding the ntfy access token |
-| `TRANSCRIPT_KEY_FILE` | (off)  | Key file for encrypted terminal transcripts, see [Terminal](#terminal) |
+## Next steps
 
-All paths must be absolute. The three `NTFY_` settings go together: set all of them
-or none.
+- **Use it without the SSH tunnel:** put it behind HTTPS on your network. The
+  [HTTPS guide](docs/https.md) has a complete, working example with Caddy and a
+  free Let's Encrypt certificate.
+- **Let it edit your compose files:** QuenWard can show every file right away,
+  but needs your permission to change them.
+  [Compose editor](docs/compose-editor.md) explains the one-time command.
+- **Get a phone notification** on failed logins and password resets, with
+  ntfy. See [Configuration](docs/configuration.md).
+- **Record terminal sessions** (off by default, encrypted). See
+  [Terminal](docs/terminal.md).
 
-## Security alerts (ntfy)
+## Everyday questions
 
-Failed logins, lockouts, failed setup attempts and password resets are sent to
-ntfy. The alerts contain usernames and IP addresses, so give them their own topic
-and protect it with an access token, then mount the token as a file:
+**I forgot my password.** There's deliberately no "forgot password" link. On
+the server, run `docker exec -it quenward reset-password`. It prints a link
+that works once, for 15 minutes.
 
-```yaml
-    environment:
-      NTFY_URL: http://192.168.0.37:8085
-      NTFY_TOPIC: stack-security
-      NTFY_TOKEN_FILE: /run/secrets/ntfy_token
-    volumes:
-      - ./secrets/ntfy_token:/run/secrets/ntfy_token:ro
-```
+**How do I update QuenWard?** It can't update itself (that would cut you off
+halfway). On the server, in its folder:
+`docker compose pull && docker compose up -d`. Your account and settings are
+kept.
 
-The app runs as user 46337 inside the container, so that user must be able to read
-the file: `sudo chown 46337 secrets/ntfy_token && sudo chmod 400 secrets/ntfy_token`.
+**Why does a stack say "partial"?** Some of its containers are running and
+some aren't. Open it to see which.
 
-Alerts are throttled (at most 10 per 5 minutes, then one "suppressed" notice), so a
-brute-force attempt cannot flood your phone.
+**Can I use it from my phone?** Yes, the dashboard works on small screens. You
+still need to be on your home network or VPN.
 
-## Forgot the password
+## Documentation
 
-There is deliberately no "forgot password" in the web UI. On the server, run:
+| Page | What's in it |
+| --- | --- |
+| [HTTPS](docs/https.md) | Serving QuenWard over HTTPS with Caddy, or behind your own reverse proxy |
+| [Stacks and updates](docs/stacks.md) | How stacks are found, what start, stop and update do, rollback, private registries |
+| [Terminal](docs/terminal.md) | Limits, how sessions end, encrypted recordings |
+| [Compose editor](docs/compose-editor.md) | How saving is checked, and giving QuenWard write access |
+| [Configuration](docs/configuration.md) | All settings, phone alerts, themes, password reset, first start |
+| [Development](docs/development.md) | Running it from source, tests, releases |
+| [SECURITY.md](SECURITY.md) | What QuenWard protects against, how it's tested, and how to report a problem |
 
-```bash
-docker exec -it quenward-dev reset-password
-```
+## License
 
-This logs the user out everywhere and prints a link that works once, for 15 minutes.
-The link uses the first address in `ALLOWED_ORIGINS`.
-
-## First start
-
-With no admin account, the app prints a one-time setup token to its log:
-
-```bash
-docker logs quenward-dev 2>&1 | grep "setup token"
-```
-
-The token creates the first admin and then stops working for good. Until setup is
-done, every restart prints a new one.
-
-## Releases
-
-Pushing a version tag builds the image for amd64 and arm64, runs the same checks
-as CI (smoke test, user check, Trivy), pushes it to
-`ghcr.io/tunnelpojken/quenward` and drafts a GitHub release to review and publish
-by hand. The tag must match `version` in `pyproject.toml`:
-
-```bash
-git tag -a v0.1.0 -m "QuenWard 0.1.0"
-git push origin v0.1.0
-```
-
-A release `x.y.z` is tagged `x.y.z`, `x.y` and `latest`; a pre-release such as
-`0.2.0-rc.1` only gets its own tag. Every image carries an SBOM and build
-provenance (`docker buildx imagetools inspect ghcr.io/tunnelpojken/quenward:0.1`).
-
-While the repository is private, so is the image. To pull it on a server, log in
-once with a personal access token (classic) that has only `read:packages`:
-
-```bash
-docker login ghcr.io -u tunnelpojken    # paste the token as the password
-```
-
-## Database migrations
-
-Plain SQL files in `app/migrations/`, numbered `0001_…`, `0002_…`, run once each
-at startup inside a transaction. Never edit an applied migration; add a new one.
+[MIT](LICENSE)

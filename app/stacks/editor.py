@@ -183,7 +183,7 @@ def check_compose(
         _private_file(check, data, 0o600)
     except OSError:
         raise EditRefused(
-            "The app cannot write in this stack's folder. See 'Compose editor' in the README.",
+            "The app cannot write in this stack's folder. See docs/compose-editor.md.",
             403,
         ) from None
     try:
@@ -291,7 +291,7 @@ def save(
         _write_in_place(path, data)
     except PermissionError:
         raise EditRefused(
-            "The app may not write this file. See 'Compose editor' in the README.", 403
+            "The app may not write this file. See docs/compose-editor.md.", 403
         ) from None
     except OSError:
         raise EditRefused("The file could not be written", 500) from None

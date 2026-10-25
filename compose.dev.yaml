@@ -19,8 +19,8 @@ services:
       # records that path on every container, and that is how containers are
       # matched to their stack folder.
       STACKS_DIR: ${PWD}/dev-stacks
-      # Terminal transcripts are off without a key. To try them, see "Terminal"
-      # in the README, then uncomment this and the matching volume below.
+      # Terminal transcripts are off without a key. To try them, see
+      # docs/terminal.md, then uncomment this and the matching volume below.
       # TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
     # Access to the Docker socket is root-equivalent on this machine. The app
     # gets it through the socket's group instead of running as root. Set
@@ -31,7 +31,7 @@ services:
       - data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       # Writable for the compose editor. The app (user 46337) still needs write
-      # permission on each stack folder and compose file: see the README.
+      # permission on each stack folder and compose file: see docs/compose-editor.md.
       - ${PWD}/dev-stacks:${PWD}/dev-stacks
       # - ./secrets/transcript.key:/run/secrets/transcript.key:ro
     # Hardening: read-only filesystem, no Linux capabilities, no privilege escalation.
