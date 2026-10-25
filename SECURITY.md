@@ -149,8 +149,8 @@ again.
 
 ## Running it safely
 
-- Serve it over HTTPS on your LAN or VPN only. See "HTTPS behind a reverse proxy"
-  in the README and [`examples/behind-caddy/`](examples/behind-caddy/).
+- Serve it over HTTPS on your LAN or VPN only. See [docs/https.md](docs/https.md)
+  and [`examples/behind-caddy/`](examples/behind-caddy/).
 - Do not forward its port on your router and do not put it behind a public
   tunnel (Cloudflare Tunnel, ngrok and the like).
 - Bind the app's own port to `127.0.0.1`, as in the examples.

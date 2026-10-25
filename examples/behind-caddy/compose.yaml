@@ -1,5 +1,5 @@
 # The app behind its own Caddy, with a certificate from Let's Encrypt via a
-# Cloudflare DNS challenge. See "HTTPS behind a reverse proxy" in the README.
+# Cloudflare DNS challenge. See docs/https.md.
 #
 # Replace stacks.example.com, the stacks path, and the port if 8443 is taken.
 # Meant for your LAN or VPN only: no port forward, no public tunnel.
@@ -21,14 +21,14 @@ services:
       # address below). From anyone else the header could be faked, and the login
       # rate limit and the audit log would see whatever IP an attacker chose.
       FORWARDED_ALLOW_IPS: 10.46.33.2
-      # Optional, see "Terminal" in the README.
+      # Optional, see docs/terminal.md.
       # TRANSCRIPT_KEY_FILE: /run/secrets/transcript.key
     group_add:
       - "${DOCKER_GID:?Set DOCKER_GID in .env first}"
     volumes:
       - data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      # Same path as on the host, see "Docker access" in the README.
+      # Same path as on the host, see docs/stacks.md.
       - /home/you/docker:/home/you/docker
       # - ./secrets/transcript.key:/run/secrets/transcript.key:ro
     networks:
